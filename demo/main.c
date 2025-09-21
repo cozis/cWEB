@@ -5,7 +5,7 @@
 
 #define HTML_STR(X) html_str(HTTP_STR(#X))
 
-static HTTP_String html_str(HTTP_String str)
+static CWEB_String html_str(CWEB_String str)
 {
     str = cweb_trim(str);
     if (str.len > 0 && str.ptr[0] == '(') {
@@ -60,53 +60,54 @@ static int hex_digit_to_int(char c)
         return c - 'a' + 10;
     return c - '0';
 }
+#endif
+
 
 #define USERNAME_LIMIT 64
 
-bool valid_name(HTTP_String str)
+bool valid_name(CWEB_String str)
 {
     (void) str; // TODO
     return true;
 }
 
-bool valid_email(HTTP_String str)
+bool valid_email(CWEB_String str)
 {
     (void) str; // TODO
     return true;
 }
 
-bool valid_pass(HTTP_String str)
+bool valid_pass(CWEB_String str)
 {
     (void) str; // TODO
     return true;
 }
 
-bool valid_post_title(HTTP_String str)
+bool valid_post_title(CWEB_String str)
 {
     (void) str; // TODO
     return true;
 }
 
-bool valid_post_content(HTTP_String str)
+bool valid_post_content(CWEB_String str)
 {
     (void) str; // TODO
     return true;
 }
 
-bool valid_link(HTTP_String str)
+bool valid_link(CWEB_String str)
 {
     (void) str;
     return true;
 }
 
-bool valid_comment_content(HTTP_String str)
+bool valid_comment_content(CWEB_String str)
 {
     (void) str;
     return true;
 }
-#endif
 
-static int user_exists(CWEB *cweb, HTTP_String name, HTTP_String pass)
+static int user_exists(CWEB *cweb, CWEB_String name, CWEB_String pass)
 {
     CWEB_QueryResult res = cweb_database_select(cweb, "SELECT id, hash FROM Users WHERE username=?", name);
 
@@ -301,7 +302,7 @@ static void endpoint_index(CWEB_Request *req)
 
 static void endpoint_write(CWEB_Request *req)
 {
-    if (cweb_get_current_user_id(req) == -1) {
+    if (cweb_get_session_user_id(req) == -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -311,7 +312,7 @@ static void endpoint_write(CWEB_Request *req)
 
 static void endpoint_login(CWEB_Request *req)
 {
-    if (cweb_get_current_user_id(req) != -1) {
+    if (cweb_get_session_user_id(req) != -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -321,7 +322,7 @@ static void endpoint_login(CWEB_Request *req)
 
 static void endpoint_signup(CWEB_Request *req)
 {
-    if (cweb_get_current_user_id(req) != -1) {
+    if (cweb_get_session_user_id(req) != -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }

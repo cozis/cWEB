@@ -1,5 +1,12 @@
+#include <stdint.h>
+#include <stdbool.h>
 
-#define CWEB_STR(X) (CWEB_String) { (X), SIZEOF(X)-1 }
+#ifndef CWEB_AMALGAMATION
+#include "wl.h"
+#include "chttp.h"
+#endif
+
+#define CWEB_STR(X) (CWEB_String) { (X), (int) sizeof(X)-1 }
 
 typedef struct {
     char *ptr;
