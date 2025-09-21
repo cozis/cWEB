@@ -1,11 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#ifndef CWEB_AMALGAMATION
-#include "wl.h"
-#include "chttp.h"
-#endif
-
 #define CWEB_STR(X) (CWEB_String) { (X), (int) sizeof(X)-1 }
 
 typedef struct {
@@ -195,33 +190,17 @@ typedef struct {
 #define CWEB_VARGS(...) CWEB_DISPATCH__(__VA_ARGS__, CWEB_VARGS_5, CWEB_VARGS_4, CWEB_VARGS_3, CWEB_VARGS_2, CWEB_VARGS_1)(__VA_ARGS__)
 
 typedef struct CWEB CWEB;
-
-typedef struct {
-
-    CWEB *cweb;
-
-    WL_Arena arena;
-
-    HTTP_Request *req;
-    HTTP_ResponseBuilder builder;
-
-    // Session
-    bool just_created_session;
-    int  user_id;
-    CWEB_String sess;
-    CWEB_String csrf;
-
-} CWEB_Request;
+typedef struct CWEB_Request CWEB_Request;
 
 int  cweb_global_init(void);
 void cweb_global_free(void);
 
-int  cweb_init(CWEB *cweb, CWEB_String addr, uint16_t port);
-void cweb_free(CWEB *cweb);
+CWEB *cweb_init(CWEB_String addr, uint16_t port);
+void  cweb_free(CWEB *cweb);
 
 int cweb_enable_database(CWEB *cweb, CWEB_String file);
 
-CWEB_Request cweb_wait(CWEB *cweb);
+CWEB_Request *cweb_wait(CWEB *cweb);
 
 //////////////////////////////////////
 // Session
@@ -233,6 +212,7 @@ int         cweb_set_session_user_id(CWEB_Request *req, int user_id);
 //////////////////////////////////////
 // Request
 
+bool        cweb_match_endpoint(CWEB_Request *req, CWEB_String str);
 CWEB_String cweb_get_param_s(CWEB_Request *req, CWEB_String name);
 int         cweb_get_param_i(CWEB_Request *req, CWEB_String name);
 

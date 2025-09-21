@@ -1,4 +1,6 @@
 #include "sqlite3.h"
+#include "wl.h"
+#include "chttp.h"
 #include "cweb.h"
 
 #ifdef __linux__
@@ -55,9 +57,27 @@ struct CWEB {
     SQLiteCache *dbcache;
 
     // Template
-    TemplateCache *tcpcache;
+    TemplateCache *tpcache;
 
     bool allow_insecure_login;
+
+    CWEB_Request req;
+};
+
+struct CWEB_Request {
+
+    CWEB *cweb;
+
+    WL_Arena arena;
+
+    HTTP_Request *req;
+    HTTP_ResponseBuilder builder;
+
+    // Session
+    bool just_created_session;
+    int  user_id;
+    CWEB_String sess;
+    CWEB_String csrf;
 };
 
 ///////////////////////////
@@ -268,7 +288,7 @@ static void session_storage_free(SessionStorage *storage)
     free(storage);
 }
 
-static Session *lookup_session_slot(SessionStorage *storage, HTTP_String sess, bool find_unused)
+static Session *lookup_session_slot(SessionStorage *storage, CWEB_String sess, bool find_unused)
 {
     if (find_unused && 2 * storage->count + 2 > storage->capacity)
         return NULL;
@@ -321,7 +341,7 @@ static Session *lookup_session_slot(SessionStorage *storage, HTTP_String sess, b
     return NULL;
 }
 
-static int create_session(SessionStorage *storage, int user, HTTP_String *psess, HTTP_String *pcsrf)
+static int create_session(SessionStorage *storage, int user, CWEB_String *psess, CWEB_String *pcsrf)
 {
     int ret;
     char raw_sess[SESS_RAW_TOKEN_SIZE];
@@ -338,21 +358,21 @@ static int create_session(SessionStorage *storage, int user, HTTP_String *psess,
     unpack_token(raw_sess, SESS_RAW_TOKEN_SIZE, sess, SESS_TOKEN_SIZE);
     unpack_token(raw_csrf, CSRF_RAW_TOKEN_SIZE, csrf, CSRF_TOKEN_SIZE);
 
-    Session *found = lookup_session_slot(storage, (HTTP_String) { sess, SESS_TOKEN_SIZE }, true);
+    Session *found = lookup_session_slot(storage, (CWEB_String) { sess, SESS_TOKEN_SIZE }, true);
     if (found == NULL) return -1;
 
     found->user = user;
     memcpy(found->sess, sess, SESS_TOKEN_SIZE);
     memcpy(found->csrf, csrf, CSRF_TOKEN_SIZE);
 
-    *psess = (HTTP_String) { found->sess, SESS_TOKEN_SIZE };
-    *pcsrf = (HTTP_String) { found->csrf, CSRF_TOKEN_SIZE };
+    *psess = (CWEB_String) { found->sess, SESS_TOKEN_SIZE };
+    *pcsrf = (CWEB_String) { found->csrf, CSRF_TOKEN_SIZE };
 
     storage->count++;
     return 0;
 }
 
-static int delete_session(SessionStorage *storage, HTTP_String sess)
+static int delete_session(SessionStorage *storage, CWEB_String sess)
 {
     char raw_sess[SESS_RAW_TOKEN_SIZE];
     if (sess.len != SESS_TOKEN_SIZE || pack_token(sess.ptr, sess.len, raw_sess, (int) sizeof(raw_sess)) < 0)
@@ -366,13 +386,13 @@ static int delete_session(SessionStorage *storage, HTTP_String sess)
     return 0;
 }
 
-static int find_session(SessionStorage *storage, HTTP_String sess, HTTP_String *pcsrf, int *puser)
+static int find_session(SessionStorage *storage, CWEB_String sess, CWEB_String *pcsrf, int *puser)
 {
     Session *found = lookup_session_slot(storage, sess, false);
     if (found == NULL)
         return -1;
     assert(found->user >= 0);
-    *pcsrf = (HTTP_String) { found->csrf, CSRF_TOKEN_SIZE };
+    *pcsrf = (CWEB_String) { found->csrf, CSRF_TOKEN_SIZE };
     *puser = found->user;
     return 0;
 }
@@ -493,7 +513,7 @@ static int sqlite3utils_prepare(SQLiteCache *cache, sqlite3_stmt **pstmt, char *
 }
 
 static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
-    sqlite3_stmt **pstmt, char *fmt, VArgs args)
+    sqlite3_stmt **pstmt, char *fmt, CWEB_VArgs args)
 {
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare(cache, &stmt, fmt, strlen(fmt));
@@ -533,7 +553,7 @@ static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
     return SQLITE_OK;
 }
 
-int64_t cweb_database_insert_impl(CWEB *cweb, const char *fmt, VArgs args)
+int64_t cweb_database_insert_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args)
 {
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
@@ -638,7 +658,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
 
             case CWEB_VARG_TYPE_PSTR:
             {
-                *args.ptr[i].pstr = (HTTP_String) {
+                *args.ptr[i].pstr = (CWEB_String) {
                     sqlite3_column_text(res->handle, i),
                     sqlite3_column_bytes(res->handle, i),
                 };
@@ -673,7 +693,7 @@ void cweb_global_free(void)
     http_global_free();
 }
 
-int cweb_init(CWEB *cweb, CWEB_String addr, uint16_t port)
+CWEB *web_init(CWEB_String addr, uint16_t port)
 {
     // If set, allows logins and signups over HTTP, which is highly insecure.
     // This allows compiling the application without TLS when developing.
@@ -682,29 +702,38 @@ int cweb_init(CWEB *cweb, CWEB_String addr, uint16_t port)
     if (allow_insecure_login)
         printf("WARNING: allow_insecure_login is true\n");
 
+    CWEB *cweb = malloc(sizeof(CWEB));
+    if (cweb == NULL)
+        return -1;
+
     cweb->pool_cap = 1<<20;
     cweb->pool = malloc(cweb->pool_cap);
-    if (cweb->pool == NULL)
+    if (cweb->pool == NULL) {
+        free(cweb);
         return -1;
+    }
 
     cweb->tpcache = template_cache_init(4);
     if (cweb->tpcache == NULL) {
         free(cweb->pool);
+        free(cweb);
         return -1;
     }
 
     cweb->session_storage = session_storage_init(1024);
     if (cweb->session_storage == NULL) {
-        template_cache_free(cweb->tcpcache);
+        template_cache_free(cweb->tpcache);
         free(cweb->pool);
+        free(cweb);
         return -1;
     }
 
-    cweb->server = http_server_init(addr, port);
+    cweb->server = http_server_init((HTTP_String) { addr.ptr, addr.len }, port);
     if (cweb->server == NULL) {
         session_storage_free(cweb->session_storage);
-        template_cache_free(cweb->tcpcache);
+        template_cache_free(cweb->tpcache);
         free(cweb->pool);
+        free(cweb);
         return -1;
     }
 
@@ -725,6 +754,7 @@ void cweb_free(CWEB *cweb)
         sqlite_cache_free(cweb->dbcache);
         sqlite3_close(cweb->db);
     }
+    free(cweb);
 }
 
 void cweb_version(void)
@@ -778,28 +808,29 @@ int cweb_enable_database(CWEB *cweb, CWEB_String file)
     return 0;
 }
 
-CWEB_Request cweb_wait(CWEB *cweb)
+CWEB_Request *cweb_wait(CWEB *cweb)
 {
-    CWEB_Request req;
+    CWEB_Request *req = &cweb->req;
 
-    int ret = http_server_wait(cweb->server, &req.req, &req.builder);
+    int ret = http_server_wait(cweb->server, &req->req, &req->builder);
     if (ret < 0) return -1;
 
-    req.arena = (WL_Arena) { cweb->pool, cweb->pool_cap, 0 };
+    req->arena = (WL_Arena) { cweb->pool, cweb->pool_cap, 0 };
 
-    int user_id;
-    HTTP_String sess;
-    HTTP_String csrf;
-
-    req.just_created_session = false;
-    req.sess = http_getcookie(req.req, HTTP_STR("sess_token"));
-    if (find_session(cweb->session_storage, sess, &csrf, &user_id) < 0) {
-        req.user_id = -1;
-        req.sess = (HTTP_String) { NULL, 0 };
-        req.csrf = (HTTP_String) { NULL, 0 };
+    req->just_created_session = false;
+    req->sess = http_get_cookie(req->req, HTTP_STR("sess_token"));
+    if (find_session(cweb->session_storage, req->sess, &req->csrf, &req->user_id) < 0) {
+        req->user_id = -1;
+        req->sess = (CWEB_String) { NULL, 0 };
+        req->csrf = (CWEB_String) { NULL, 0 };
     }
 
     return req;
+}
+
+bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str)
+{
+    return http_streq(req->req->url.path, (HTTP_String) { str.ptr, str.len });
 }
 
 CWEB_String cweb_get_param_s(CWEB_Request *req, CWEB_String name)
