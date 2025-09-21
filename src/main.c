@@ -1,0 +1,1291 @@
+#include "sqlite3.h"
+#include "cweb.h"
+
+#ifdef __linux__
+#include <errno.h>
+#include <sys/random.h>
+#endif
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+typedef struct {
+    char           path[1<<8];
+    int            pathlen;
+    WL_Program     program;
+} CachedProgram;
+
+typedef struct {
+    int count;
+    int capacity_log2;
+    CachedProgram pool[];
+} TemplateCache;
+
+static TemplateCache *template_cache_init(int capacity_log2);
+static void           template_cache_free(TemplateCache *cache);
+
+typedef struct SessionStorage SessionStorage;
+typedef struct SQLiteCache SQLiteCache;
+
+static SQLiteCache* sqlite_cache_init(sqlite3 *db, int capacity_log2);
+static void         sqlite_cache_free(SQLiteCache *cache);
+static sqlite3*     sqlite_cache_getdb(SQLiteCache *cache);
+
+static int sqlite3utils_prepare(SQLiteCache *cache,
+    sqlite3_stmt **pstmt, char *fmt, int fmtlen);
+
+static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
+    sqlite3_stmt **pstmt, char *fmt, CWEB_VArgs args);
+
+#define sqlite3utils_prepare_and_bind(cache, pstmt, fmt, ...) \
+    sqlite3utils_prepare_and_bind_impl((cache), (pstmt), (fmt), VARGS(__VA_ARGS__))
+
+struct CWEB {
+
+    HTTP_Server *server;
+    int pool_cap;
+    char *pool;
+
+    // Login
+    SessionStorage *session_storage;
+
+    // Database
+    sqlite3 *db;
+    SQLiteCache *dbcache;
+
+    // Template
+    TemplateCache *tcpcache;
+
+    bool allow_insecure_login;
+};
+
+///////////////////////////
+
+bool cweb_streq(CWEB_String a, CWEB_String b)
+{
+    return http_streq((HTTP_String) { a.ptr, a.len }, (HTTP_String) { b.ptr, b.len });
+}
+
+CWEB_String cweb_trim(CWEB_String s)
+{
+    HTTP_String s2 = http_trim((HTTP_String) { s.ptr, s.len });
+    return (CWEB_String) { s2.ptr, s2.len };
+}
+
+CWEB_VArg cweb_varg_from_c    (char c)            { return (CWEB_VArg) { CWEB_VARG_TYPE_C,    .c=c       }; }
+CWEB_VArg cweb_varg_from_s    (short s)           { return (CWEB_VArg) { CWEB_VARG_TYPE_S,    .s=s       }; }
+CWEB_VArg cweb_varg_from_i    (int i)             { return (CWEB_VArg) { CWEB_VARG_TYPE_I,    .i=i       }; }
+CWEB_VArg cweb_varg_from_l    (long l)            { return (CWEB_VArg) { CWEB_VARG_TYPE_L,    .l=l       }; }
+CWEB_VArg cweb_varg_from_ll   (long long ll)      { return (CWEB_VArg) { CWEB_VARG_TYPE_LL,   .ll=ll     }; }
+CWEB_VArg cweb_varg_from_sc   (char sc)           { return (CWEB_VArg) { CWEB_VARG_TYPE_SC,   .sc=sc     }; }
+CWEB_VArg cweb_varg_from_ss   (short ss)          { return (CWEB_VArg) { CWEB_VARG_TYPE_SS,   .ss=ss     }; }
+CWEB_VArg cweb_varg_from_si   (int si)            { return (CWEB_VArg) { CWEB_VARG_TYPE_SI,   .si=si     }; }
+CWEB_VArg cweb_varg_from_sl   (long sl)           { return (CWEB_VArg) { CWEB_VARG_TYPE_SL,   .sl=sl     }; }
+CWEB_VArg cweb_varg_from_sll  (long long sll)     { return (CWEB_VArg) { CWEB_VARG_TYPE_SLL,  .sll=sll   }; }
+CWEB_VArg cweb_varg_from_uc   (char uc)           { return (CWEB_VArg) { CWEB_VARG_TYPE_UC,   .uc=uc     }; }
+CWEB_VArg cweb_varg_from_us   (short us)          { return (CWEB_VArg) { CWEB_VARG_TYPE_US,   .us=us     }; }
+CWEB_VArg cweb_varg_from_ui   (int ui)            { return (CWEB_VArg) { CWEB_VARG_TYPE_UI,   .ui=ui     }; }
+CWEB_VArg cweb_varg_from_ul   (long ul)           { return (CWEB_VArg) { CWEB_VARG_TYPE_UL,   .ul=ul     }; }
+CWEB_VArg cweb_varg_from_ull  (long long ull)     { return (CWEB_VArg) { CWEB_VARG_TYPE_ULL,  .ull=ull   }; }
+CWEB_VArg cweb_varg_from_f    (float f)           { return (CWEB_VArg) { CWEB_VARG_TYPE_F,    .f=f       }; }
+CWEB_VArg cweb_varg_from_d    (double d)          { return (CWEB_VArg) { CWEB_VARG_TYPE_D,    .d=d       }; }
+CWEB_VArg cweb_varg_from_b    (bool b)            { return (CWEB_VArg) { CWEB_VARG_TYPE_B,    .b=b       }; }
+CWEB_VArg cweb_varg_from_str  (HTTP_String str)   { return (CWEB_VArg) { CWEB_VARG_TYPE_STR,  .str=str   }; }
+CWEB_VArg cweb_varg_from_pc   (char *pc)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PC,   .pc=pc     }; }
+CWEB_VArg cweb_varg_from_ps   (short *ps)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PS,   .ps=ps     }; }
+CWEB_VArg cweb_varg_from_pi   (int *pi)           { return (CWEB_VArg) { CWEB_VARG_TYPE_PI,   .pi=pi     }; }
+CWEB_VArg cweb_varg_from_pl   (long *pl)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PL,   .pl=pl     }; }
+CWEB_VArg cweb_varg_from_pll  (long long *pll)    { return (CWEB_VArg) { CWEB_VARG_TYPE_PLL,  .pll=pll   }; }
+CWEB_VArg cweb_varg_from_psc  (char *psc)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PSC,  .psc=psc   }; }
+CWEB_VArg cweb_varg_from_pss  (short *pss)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PSS,  .pss=pss   }; }
+CWEB_VArg cweb_varg_from_psi  (int *psi)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PSI,  .psi=psi   }; }
+CWEB_VArg cweb_varg_from_psl  (long *psl)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PSL,  .psl=psl   }; }
+CWEB_VArg cweb_varg_from_psll (long long *psll)   { return (CWEB_VArg) { CWEB_VARG_TYPE_PSLL, .psll=psll }; }
+CWEB_VArg cweb_varg_from_puc  (char *puc)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PUC,  .puc=puc   }; }
+CWEB_VArg cweb_varg_from_pus  (short *pus)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PUS,  .pus=pus   }; }
+CWEB_VArg cweb_varg_from_pui  (int *pui)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PUI,  .pui=pui   }; }
+CWEB_VArg cweb_varg_from_pul  (long *pul)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PUL,  .pul=pul   }; }
+CWEB_VArg cweb_varg_from_pull (long long *pull)   { return (CWEB_VArg) { CWEB_VARG_TYPE_PULL, .pull=pull }; }
+CWEB_VArg cweb_varg_from_pf   (float *pf)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PF,   .pf=pf     }; }
+CWEB_VArg cweb_varg_from_pd   (double *pd)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PD,   .pd=pd     }; }
+CWEB_VArg cweb_varg_from_pb   (bool *pb)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PB,   .pb=pb     }; }
+CWEB_VArg cweb_varg_from_pstr (HTTP_String *pstr) { return (CWEB_VArg) { CWEB_VARG_TYPE_PSTR, .pstr=pstr }; }
+
+
+/////////////////////////////////////////////////////////////////
+// RANDOM
+////////////////////////////////////////////////////////////////
+
+static int generate_random_bytes(char *dst, int cap)
+{
+#ifdef __linux__
+    int copied = 0;
+    while (copied < cap) {
+        int ret = getrandom(dst, (size_t) cap, 0);
+        if (ret < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        copied += ret;
+    }
+    return 0;
+#endif
+
+#ifdef _WIN32
+    NTSTATUS status = BCryptGenRandom(NULL, (unsigned char*) dst, (ULONG) cap, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    return BCRYPT_SUCCESS(status) ? 0 : -1;
+#endif
+}
+
+////////////////////////////////////////////////////////////////
+// PASSWORD
+////////////////////////////////////////////////////////////////
+
+int cweb_hash_password(char *pass, int passlen, int cost, CWEB_PasswordHash *hash)
+{
+    char passzt[128];
+    if (passlen >= (int) sizeof(passzt))
+        return -1;
+    memcpy(passzt, pass, passlen);
+    passzt[passlen] = '\0';
+
+    char random[16];
+    int ret = generate_random_bytes(random, (int) sizeof(random));
+    if (ret) return -1;
+
+    char salt[30];
+    if (_crypt_gensalt_blowfish_rn("$2b$", cost, random, sizeof(random), salt, sizeof(salt)) == NULL)
+        return -1;
+
+    if (_crypt_blowfish_rn(passzt, salt, hash->data, (int) sizeof(hash->data)) == NULL)
+        return -1;
+
+    return 0;
+}
+
+int cweb_check_password(char *pass, int passlen, CWEB_PasswordHash hash)
+{
+    char passzt[128];
+    if (passlen >= (int) sizeof(passzt))
+        return -1;
+    memcpy(passzt, pass, passlen);
+    passzt[passlen] = '\0';
+
+    CWEB_PasswordHash new_hash;
+    if (_crypt_blowfish_rn(passzt, hash.data, new_hash.data, sizeof(new_hash.data)) == NULL)
+        return -1;
+
+    if (strcmp(hash.data, new_hash.data)) // TODO: should be constant-time
+        return 1;
+
+    return 0;
+}
+
+/////////////////////////////////////////////////////////////////
+// SESSION
+////////////////////////////////////////////////////////////////
+
+#define CSRF_RAW_TOKEN_SIZE 32
+#define SESS_RAW_TOKEN_SIZE 32
+
+#define CSRF_TOKEN_SIZE (2 * CSRF_RAW_TOKEN_SIZE)
+#define SESS_TOKEN_SIZE (2 * SESS_RAW_TOKEN_SIZE)
+
+typedef struct {
+    int  user;
+    char csrf[CSRF_TOKEN_SIZE];
+    char sess[SESS_TOKEN_SIZE];
+} Session;
+
+struct SessionStorage {
+    int count;
+    int capacity;
+    Session items[];
+};
+
+static bool is_hex_digit(char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+}
+
+static int hex_digit_to_int(char c)
+{
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    return c - '0';
+}
+
+static void unpack_token(char *src, int srclen, char *dst, int dstlen)
+{
+    assert(2 * srclen == dstlen);
+
+    for (int i = 0; i < srclen; i++) {
+        static const char table[] = "0123456789abcdef";
+        int low  = (src[i] & 0x0F) >> 0;
+        int high = (src[i] & 0xF0) >> 4;
+        dst[(i << 1) | 0] = table[high];
+        dst[(i << 1) | 1] = table[low];
+    }
+}
+
+static int pack_token(char *src, int srclen, char *dst, int dstlen)
+{
+    if (srclen & 1)
+        return -1;
+
+    assert(srclen == 2 * dstlen);
+
+    for (int i = 0; i < srclen; i += 2) {
+        int high = src[i+0];
+        int low  = src[i+1];
+        if (!is_hex_digit(high) || !is_hex_digit(low))
+            return -1;
+        dst[i] = (hex_digit_to_int(high) << 4) | (hex_digit_to_int(low) << 0);
+    }
+
+    return 0;
+}
+
+static SessionStorage *session_storage_init(int max_sessions)
+{
+    int capacity = 2 * max_sessions;
+    SessionStorage *storage = malloc(sizeof(SessionStorage) + capacity * sizeof(Session));
+    if (storage == NULL)
+        return NULL;
+    storage->count = 0;
+    storage->capacity = capacity;
+    for (int i = 0; i < capacity; i++)
+        storage->items[i].user = -1;
+    return storage;
+}
+
+static void session_storage_free(SessionStorage *storage)
+{
+    free(storage);
+}
+
+static Session *lookup_session_slot(SessionStorage *storage, HTTP_String sess, bool find_unused)
+{
+    if (find_unused && 2 * storage->count + 2 > storage->capacity)
+        return NULL;
+
+    if (sess.len != SESS_TOKEN_SIZE)
+        return NULL;
+
+    uint64_t key;
+    if (sess.len < (int) (2 * sizeof(key)))
+        return NULL;
+    for (int i = 0; i < (int) sizeof(key); i++) {
+
+        int high = sess.ptr[(i << 1) | 0];
+        int low  = sess.ptr[(i << 1) | 1];
+
+        if (!is_hex_digit(sess.ptr[i+0]) ||
+            !is_hex_digit(sess.ptr[i+1]))
+            return NULL;
+
+        key <<= 4;
+        key |= hex_digit_to_int(high);
+
+        key <<= 4;
+        key |= hex_digit_to_int(low);
+    }
+    int i = key % storage->capacity;
+
+    for (int j = 0; j < storage->capacity; j++) {
+
+        if (find_unused) {
+
+            if (storage->items[i].user < 0)
+                return &storage->items[i]; // Unused slot
+
+        } else {
+
+            if (storage->items[i].user == -1)
+                return NULL;
+
+            if (storage->items[i].user != -2)
+                if (!memcmp(storage->items[i].sess, sess.ptr, SESS_TOKEN_SIZE))
+                    return &storage->items[i];
+        }
+
+        i++;
+        if (i == storage->capacity)
+            i = 0;
+    }
+
+    return NULL;
+}
+
+static int create_session(SessionStorage *storage, int user, HTTP_String *psess, HTTP_String *pcsrf)
+{
+    int ret;
+    char raw_sess[SESS_RAW_TOKEN_SIZE];
+    char raw_csrf[CSRF_RAW_TOKEN_SIZE];
+
+    ret = generate_random_bytes(raw_sess, SESS_RAW_TOKEN_SIZE);
+    if (ret) return -1;
+
+    ret = generate_random_bytes(raw_csrf, CSRF_RAW_TOKEN_SIZE);
+    if (ret) return -1;
+
+    char sess[SESS_TOKEN_SIZE];
+    char csrf[CSRF_TOKEN_SIZE];
+    unpack_token(raw_sess, SESS_RAW_TOKEN_SIZE, sess, SESS_TOKEN_SIZE);
+    unpack_token(raw_csrf, CSRF_RAW_TOKEN_SIZE, csrf, CSRF_TOKEN_SIZE);
+
+    Session *found = lookup_session_slot(storage, (HTTP_String) { sess, SESS_TOKEN_SIZE }, true);
+    if (found == NULL) return -1;
+
+    found->user = user;
+    memcpy(found->sess, sess, SESS_TOKEN_SIZE);
+    memcpy(found->csrf, csrf, CSRF_TOKEN_SIZE);
+
+    *psess = (HTTP_String) { found->sess, SESS_TOKEN_SIZE };
+    *pcsrf = (HTTP_String) { found->csrf, CSRF_TOKEN_SIZE };
+
+    storage->count++;
+    return 0;
+}
+
+static int delete_session(SessionStorage *storage, HTTP_String sess)
+{
+    char raw_sess[SESS_RAW_TOKEN_SIZE];
+    if (sess.len != SESS_TOKEN_SIZE || pack_token(sess.ptr, sess.len, raw_sess, (int) sizeof(raw_sess)) < 0)
+        return -1;
+    Session *found = lookup_session_slot(storage, sess, false);
+    if (found == NULL)
+        return false;
+    assert(found->user >= 0);
+    found->user = -2;
+    storage->count--;
+    return 0;
+}
+
+static int find_session(SessionStorage *storage, HTTP_String sess, HTTP_String *pcsrf, int *puser)
+{
+    Session *found = lookup_session_slot(storage, sess, false);
+    if (found == NULL)
+        return -1;
+    assert(found->user >= 0);
+    *pcsrf = (HTTP_String) { found->csrf, CSRF_TOKEN_SIZE };
+    *puser = found->user;
+    return 0;
+}
+
+/////////////////////////////////////////////////////////////////
+// DATABASE
+////////////////////////////////////////////////////////////////
+
+typedef struct {
+    char *str;
+    int   len;
+    sqlite3_stmt *stmt;
+} Prepped;
+
+struct SQLiteCache {
+    sqlite3 *db;
+    int count;
+    int capacity_log2;
+    Prepped items[];
+};
+
+static SQLiteCache *sqlite_cache_init(sqlite3 *db, int capacity_log2)
+{
+    SQLiteCache *cache = malloc(sizeof(SQLiteCache) + (1 << capacity_log2) * sizeof(Prepped));
+    if (cache == NULL)
+        return NULL;
+
+    cache->db = db;
+    cache->count = 0;
+    cache->capacity_log2 = capacity_log2;
+
+    for (int i = 0; i < (1 << capacity_log2); i++)
+        cache->items[i].stmt = NULL;
+
+    return cache;
+}
+
+static void sqlite_cache_free(SQLiteCache *cache)
+{
+    for (int i = 0; i < (1 << cache->capacity_log2); i++) {
+        sqlite3_stmt *stmt = cache->items[i].stmt;
+        if (stmt) {
+            free(cache->items[i].str);
+            sqlite3_finalize(stmt);
+        }
+    }
+    free(cache);
+}
+
+static sqlite3 *sqlite_cache_getdb(SQLiteCache *cache)
+{
+    return cache->db;
+}
+
+static unsigned long djb2(char *src, int len)
+{
+    char *ptr = src;
+    char *end = src + len;
+
+    unsigned long hash = 5381;
+    int c;
+    while (ptr < end && (c = *ptr++))
+        hash = ((hash << 5) + hash) + c; // hash * 33 + c
+    return hash;
+}
+
+static int lookup(SQLiteCache *cache, char *fmt, int fmtlen)
+{
+    int mask = (1 << cache->capacity_log2) - 1;
+    int hash = djb2(fmt, fmtlen);
+    int i = hash & mask;
+    int perturb = hash;
+    for (;;) {
+
+        if (cache->items[i].stmt == NULL)
+            return i;
+
+        if (cache->items[i].len == fmtlen && !memcmp(cache->items[i].str, fmt, fmtlen))
+            return i;
+
+        perturb >>= 5;
+        i = (i * 5 + 1 + perturb) & mask;
+    }
+
+    return -1;
+}
+
+static int sqlite3utils_prepare(SQLiteCache *cache, sqlite3_stmt **pstmt, char *fmt, int fmtlen)
+{
+    if (fmtlen < 0)
+        fmtlen = strlen(fmt);
+
+    int i = lookup(cache, fmt, fmtlen);
+    if (cache->items[i].stmt == NULL) {
+
+        sqlite3_stmt *stmt;
+        int ret = sqlite3_prepare_v2(cache->db, fmt, -1, &stmt, NULL);
+        if (ret != SQLITE_OK) {
+            //fprintf(stderr, "Failed to prepare statement: %s (%s:%d)\n", sqlite3_errmsg(db), __FILE__, __LINE__);
+            return ret;
+        }
+
+        char *cpy = malloc(fmtlen);
+        if (cpy == NULL) {
+            sqlite3_finalize(stmt);
+            return SQLITE_NOMEM;
+        }
+        memcpy(cpy, fmt, fmtlen);
+
+        cache->items[i].str = cpy;
+        cache->items[i].len = fmtlen;
+        cache->items[i].stmt = stmt;
+    }
+    sqlite3_stmt *stmt = cache->items[i].stmt;
+
+    *pstmt = stmt;
+    return SQLITE_OK;
+}
+
+static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
+    sqlite3_stmt **pstmt, char *fmt, VArgs args)
+{
+    sqlite3_stmt *stmt;
+    int ret = sqlite3utils_prepare(cache, &stmt, fmt, strlen(fmt));
+    if (ret != SQLITE_OK)
+        return ret;
+
+    for (int i = 0; i < args.len; i++) {
+        CWEB_VArg arg = args.ptr[i];
+        switch (arg.type) {
+            case CWEB_VARG_TYPE_C  : ret = sqlite3_bind_text  (stmt, i+1, &arg.c, 1, NULL); break;
+            case CWEB_VARG_TYPE_S  : ret = sqlite3_bind_int   (stmt, i+1, arg.s);   break;
+            case CWEB_VARG_TYPE_I  : ret = sqlite3_bind_int   (stmt, i+1, arg.i);   break;
+            case CWEB_VARG_TYPE_L  : ret = sqlite3_bind_int64 (stmt, i+1, arg.l);   break;
+            case CWEB_VARG_TYPE_LL : ret = sqlite3_bind_int64 (stmt, i+1, arg.ll);  break;
+            case CWEB_VARG_TYPE_SC : ret = sqlite3_bind_int   (stmt, i+1, arg.sc);  break;
+            case CWEB_VARG_TYPE_SS : ret = sqlite3_bind_int   (stmt, i+1, arg.ss);  break;
+            case CWEB_VARG_TYPE_SI : ret = sqlite3_bind_int   (stmt, i+1, arg.si);  break;
+            case CWEB_VARG_TYPE_SL : ret = sqlite3_bind_int64 (stmt, i+1, arg.sl);  break;
+            case CWEB_VARG_TYPE_SLL: ret = sqlite3_bind_int   (stmt, i+1, arg.sll); break;
+            case CWEB_VARG_TYPE_UC : ret = sqlite3_bind_int   (stmt, i+1, arg.uc);  break;
+            case CWEB_VARG_TYPE_US : ret = sqlite3_bind_int   (stmt, i+1, arg.us);  break;
+            case CWEB_VARG_TYPE_UI : ret = sqlite3_bind_int64 (stmt, i+1, arg.ui);  break;
+            case CWEB_VARG_TYPE_UL : ret = sqlite3_bind_int64 (stmt, i+1, arg.ul);  break;
+            case CWEB_VARG_TYPE_ULL: ret = sqlite3_bind_int64 (stmt, i+1, arg.ull); break;
+            case CWEB_VARG_TYPE_F  : ret = sqlite3_bind_double(stmt, i+1, arg.f);   break;
+            case CWEB_VARG_TYPE_D  : ret = sqlite3_bind_double(stmt, i+1, arg.d);   break;
+            case CWEB_VARG_TYPE_B  : ret = sqlite3_bind_int   (stmt, i+1, arg.b);   break;
+            case CWEB_VARG_TYPE_STR: ret = sqlite3_bind_text  (stmt, i+1, arg.str.ptr, arg.str.len, NULL); break;
+        }
+        if (ret != SQLITE_OK) {
+            sqlite3_reset(stmt);
+            return ret;
+        }
+    }
+
+    *pstmt = stmt;
+    return SQLITE_OK;
+}
+
+int64_t cweb_database_insert_impl(CWEB *cweb, const char *fmt, VArgs args)
+{
+    sqlite3_stmt *stmt;
+    int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
+    if (ret != SQLITE_OK)
+        return -1;
+
+    ret = sqlite3_step(stmt);
+    if (ret != SQLITE_DONE) {
+        sqlite3_reset(stmt);
+        return -1;
+    }
+
+    int64_t insert_id = sqlite3_last_insert_rowid(cweb->db);
+    if (insert_id < 0) {
+        sqlite3_reset(stmt);
+        return -1;
+    }
+
+    sqlite3_reset(stmt);
+    return insert_id;
+}
+
+CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args)
+{
+    sqlite3_stmt *stmt;
+    int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
+    if (ret != SQLITE_OK)
+        return (CWEB_QueryResult) { NULL };
+
+    return (CWEB_QueryResult) { stmt };
+}
+
+int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
+{
+    if (res->handle == NULL)
+        return -1;
+
+    int ret = sqlite3_step(res->handle);
+
+    if (ret == SQLITE_DONE)
+        return 0;
+
+    if (ret != SQLITE_ROW) {
+        sqlite3_reset(res->handle);
+        res->handle = NULL;
+        return -1;
+    }
+
+    if (sqlite3_column_count(res->handle) != args.len) {
+        sqlite3_reset(res->handle);
+        res->handle = NULL;
+        return -1;
+    }
+
+    for (int i = 0; i < args.len; i++) {
+        switch (args.ptr[i].type) {
+
+            case CWEB_VARG_TYPE_PI:
+            {
+                int64_t x = sqlite3_column_int64(res->handle, i);
+                if (x < INT_MIN || x > INT_MAX) {
+                    sqlite3_reset(res->handle);
+                    res->handle = NULL;
+                    return -1;
+                }
+                *args.ptr[i].pi = (int) x;
+            }
+            break;
+
+            case CWEB_VARG_TYPE_PL:
+            {
+                int64_t x = sqlite3_column_int64(res->handle, i);
+                if (x < LONG_MIN || x > LONG_MAX) {
+                    sqlite3_reset(res->handle);
+                    res->handle = NULL;
+                    return -1;
+                }
+                *args.ptr[i].pl = (long) x;
+            }
+            break;
+
+            case CWEB_VARG_TYPE_PLL:
+            {
+                int64_t x = sqlite3_column_int64(res->handle, i);
+                *args.ptr[i].pll = (int) x;
+            }
+            break;
+
+            case CWEB_VARG_TYPE_PF:
+            {
+                double x = sqlite3_column_double(res->handle, i);
+                *args.ptr[i].pf = (float) x;
+            }
+            break;
+
+            case CWEB_VARG_TYPE_PD:
+            {
+                double x = sqlite3_column_double(res->handle, i);
+                *args.ptr[i].pf = (float) x;
+            }
+            break;
+
+            case CWEB_VARG_TYPE_PSTR:
+            {
+                *args.ptr[i].pstr = (HTTP_String) {
+                    sqlite3_column_text(res->handle, i),
+                    sqlite3_column_bytes(res->handle, i),
+                };
+            }
+            break;
+
+            default:
+            sqlite3_reset(res->handle);
+            res->handle = NULL;
+            return -1;
+        }
+    }
+
+    return 1;
+}
+
+void cweb_free_query_result(CWEB_QueryResult *res)
+{
+    if (res->handle) {
+        sqlite3_reset(res->handle);
+        res->handle = NULL;
+    }
+}
+
+int cweb_global_init(void)
+{
+    http_global_init();
+}
+
+void cweb_global_free(void)
+{
+    http_global_free();
+}
+
+int cweb_init(CWEB *cweb, CWEB_String addr, uint16_t port)
+{
+    // If set, allows logins and signups over HTTP, which is highly insecure.
+    // This allows compiling the application without TLS when developing.
+    bool allow_insecure_login = true;
+
+    if (allow_insecure_login)
+        printf("WARNING: allow_insecure_login is true\n");
+
+    cweb->pool_cap = 1<<20;
+    cweb->pool = malloc(cweb->pool_cap);
+    if (cweb->pool == NULL)
+        return -1;
+
+    cweb->tpcache = template_cache_init(4);
+    if (cweb->tpcache == NULL) {
+        free(cweb->pool);
+        return -1;
+    }
+
+    cweb->session_storage = session_storage_init(1024);
+    if (cweb->session_storage == NULL) {
+        template_cache_free(cweb->tcpcache);
+        free(cweb->pool);
+        return -1;
+    }
+
+    cweb->server = http_server_init(addr, port);
+    if (cweb->server == NULL) {
+        session_storage_free(cweb->session_storage);
+        template_cache_free(cweb->tcpcache);
+        free(cweb->pool);
+        return -1;
+    }
+
+    cweb->db = NULL;
+    cweb->dbcache = NULL;
+
+    cweb->allow_insecure_login = false;
+
+    return 0;
+}
+
+void cweb_free(CWEB *cweb)
+{
+    http_server_free(cweb->server);
+    session_storage_free(cweb->session_storage);
+    template_cache_free(cweb->tpcache);
+    if (cweb->db) {
+        sqlite_cache_free(cweb->dbcache);
+        sqlite3_close(cweb->db);
+    }
+}
+
+void cweb_version(void)
+{
+    printf("%s\n", sqlite3_libversion());
+}
+
+int cweb_enable_database(CWEB *cweb, CWEB_String file)
+{
+    if (cweb->db != NULL)
+        return -1; // Already enabled
+
+    char file_copy[1<<12];
+    if (file.len >= SIZEOF(file_copy))
+        return -1;
+    memcpy(file_copy, file.ptr, file.len);
+    file_copy[file.len] = '\0';
+
+    int ret = sqlite3_open(file_copy, &cweb->db);
+    if (ret != SQLITE_OK) {
+        sqlite3_close(cweb->db);
+        cweb->db = NULL;
+        return -1;
+    }
+
+    char *schema_data;
+    long  schema_size;
+    ret = load_file(file_copy, &schema_data, &schema_size);
+    if (ret < 0) {
+        sqlite3_close(cweb->db);
+        cweb->db = NULL;
+        return -1;
+    }
+
+    ret = sqlite3_exec(cweb->db, schema_data, NULL, NULL, NULL);
+    if (ret != SQLITE_OK) {
+        sqlite3_close(cweb->db);
+        cweb->db = NULL;
+        return -1;
+    }
+
+    free(schema_data);
+
+    cweb->dbcache = sqlite_cache_init(cweb->db, 5);
+    if (cweb->dbcache == NULL) {
+        sqlite3_close(cweb->db);
+        cweb->db = NULL;
+        return -1;
+    }
+
+    return 0;
+}
+
+CWEB_Request cweb_wait(CWEB *cweb)
+{
+    CWEB_Request req;
+
+    int ret = http_server_wait(cweb->server, &req.req, &req.builder);
+    if (ret < 0) return -1;
+
+    req.arena = (WL_Arena) { cweb->pool, cweb->pool_cap, 0 };
+
+    int user_id;
+    HTTP_String sess;
+    HTTP_String csrf;
+
+    req.just_created_session = false;
+    req.sess = http_getcookie(req.req, HTTP_STR("sess_token"));
+    if (find_session(cweb->session_storage, sess, &csrf, &user_id) < 0) {
+        req.user_id = -1;
+        req.sess = (HTTP_String) { NULL, 0 };
+        req.csrf = (HTTP_String) { NULL, 0 };
+    }
+
+    return req;
+}
+
+CWEB_String cweb_get_param_s(CWEB_Request *req, CWEB_String name)
+{
+    HTTP_String res = http_get_param(req->req->body,
+        (HTTP_String) { name.ptr, name.len },
+        req->arena.ptr + req->arena.cur,
+        req->arena.len - req->arena.cur
+    );
+    if (res.ptr >= req->arena.ptr && res.ptr < req->arena.ptr + req->arena.len)
+        req->arena.cur += res.len;
+    return (CWEB_String) { res.ptr, res.len };
+}
+
+int cweb_get_param_i(CWEB_Request *req, CWEB_String name)
+{
+    return http_get_param_i(req->req->body, (HTTP_String) { name.ptr, name.len });
+}
+
+static int set_auth_cookie_if_necessary(CWEB_Request *req)
+{
+    if (req->just_created_session) {
+        char cookie[1<<9];
+        int cookie_len = snprintf(cookie, sizeof(cookie), "Set-Cookie: sess_token=%.*s; Path=/; HttpOnly; Secure", req->sess.len, req->sess.ptr);
+        if (cookie_len < 0 || cookie_len >= (int) sizeof(cookie))
+            return -500;
+        http_response_builder_header(req->builder, (HTTP_String) { cookie, cookie_len });
+    }
+    return 0;
+}
+
+void cweb_respond(CWEB_Request *req, int status, CWEB_String content)
+{
+    http_response_builder_status(req->builder, 200);
+    int ret = set_auth_cookie_if_necessary(req);
+    if (ret < 0) {
+        http_response_builder_undo(req->builder);
+        http_response_builder_status(req->builder, -ret);
+        http_response_builder_done(req->builder);
+        return;
+    }
+    http_response_builder_body(req->builder, (HTTP_String) { content.ptr, content.len });
+    http_response_builder_done(req->builder);
+}
+
+void cweb_respond_redirect(CWEB_Request *req, CWEB_String target)
+{
+    char location[128];
+    int ret = snprintf(location, sizeof(location), "Location: %.*s", target.len, target.ptr);
+    if (ret < 0 || ret >= SIZEOF(location)) {
+        // TODO
+    }
+
+    http_response_builder_status(req->builder, 303);
+    int ret = set_auth_cookie_if_necessary(req);
+    if (ret < 0) {
+        http_response_builder_undo(req->builder);
+        http_response_builder_status(req->builder, -ret);
+        http_response_builder_done(req->builder);
+        return;
+    }
+    http_response_builder_header(req->builder, (HTTP_String) { location, ret });
+    http_response_builder_done(req->builder);
+}
+
+int cweb_set_user_id(CWEB_Request *req, int user_id)
+{
+    if (user_id != req->user_id) {
+
+        if (!req->req->secure && !req->cweb->allow_insecure_login)
+            return -1;
+
+        int ret;
+        if (user_id == -1) ret = delete_session(req->cweb->session_storage, req->sess);
+        else               ret = create_session(req->cweb->session_storage, user_id, &req->sess, &req->csrf);
+
+        if (ret < 0)
+            return -1;
+
+        req->just_created_session = true;
+    }
+
+    return 0;
+}
+
+int cweb_get_user_id(CWEB_Request *req)
+{
+    return req->user_id;
+}
+
+/////////////////////////////////////////////////////////////////
+// TEMPLATE
+////////////////////////////////////////////////////////////////
+
+static TemplateCache *template_cache_init(int capacity_log2)
+{
+    TemplateCache *cache = malloc(sizeof(TemplateCache) + (1 << capacity_log2) * sizeof(CachedProgram));
+    if (cache == NULL)
+        return NULL;
+
+    cache->count = 0;
+    cache->capacity_log2 = capacity_log2;
+
+    for (int i = 0; i < (1 << capacity_log2); i++)
+        cache->pool[i].pathlen = -1;
+    return cache;
+}
+
+static void template_cache_free(TemplateCache *cache)
+{
+    free(cache);
+}
+
+static unsigned long djb2(WL_String str)
+{
+    char *ptr = str.ptr;
+    char *end = str.ptr + str.len;
+
+    unsigned long hash = 5381;
+    int c;
+    while (ptr < end && (c = *ptr++))
+        hash = ((hash << 5) + hash) + c; // hash * 33 + c
+    return hash;
+}
+
+static int lookup(TemplateCache *cache, WL_String path)
+{
+    int mask = (1 << cache->capacity_log2) - 1;
+    int hash = djb2(path);
+    int i = hash & mask;
+    int perturb = hash;
+    for (;;) {
+
+        if (cache->pool[i].pathlen == -1)
+            return i;
+
+        if (wl_streq(path, cache->pool[i].path, cache->pool[i].pathlen))
+            return i;
+
+        perturb >>= 5;
+        i = (i * 5 + 1 + perturb) & mask;
+    }
+
+    return -1;
+}
+
+typedef struct LoadedFile LoadedFile;
+struct LoadedFile {
+    LoadedFile* next;
+    int         len;
+    char        data[];
+};
+
+static LoadedFile *load_file(WL_String path)
+{
+    char buf[1<<10];
+    if (path.len >= (int) sizeof(buf))
+        return NULL;
+    memcpy(buf, path.ptr, path.len);
+    buf[path.len] = '\0';
+
+    FILE *stream = fopen(buf, "rb");
+    if (stream == NULL)
+        return NULL;
+
+    int ret = fseek(stream, 0, SEEK_END);
+    if (ret) {
+        fclose(stream);
+        return NULL;
+    }
+
+    long tmp = ftell(stream);
+    if (tmp < 0 || tmp > INT_MAX) {
+        fclose(stream);
+        return NULL;
+    }
+    int len = (int) tmp;
+
+    ret = fseek(stream, 0, SEEK_SET);
+    if (ret) {
+        fclose(stream);
+        return NULL;
+    }
+
+    LoadedFile *result = malloc(sizeof(LoadedFile) + len + 1);
+    if (result == NULL) {
+        fclose(stream);
+        return NULL;
+    }
+    result->next = NULL;
+    result->len  = len;
+
+    int read_len = fread(result->data, 1, len+1, stream);
+    if (read_len != len || ferror(stream) || !feof(stream)) {
+        fclose(stream);
+        free(result);
+        return NULL;
+    }
+
+    fclose(stream);
+    return result;
+}
+
+static void free_loaded_files(LoadedFile *loaded_file)
+{
+    while (loaded_file) {
+        LoadedFile *next = loaded_file->next;
+        free(loaded_file);
+        loaded_file = next;
+    }
+}
+
+static int compile(WL_String path, WL_Program *program, WL_Arena *arena)
+{
+    WL_Compiler *compiler = wl_compiler_init(arena);
+    if (compiler == NULL) {
+        TRACE("Couldn't initialize WL compiler object");
+        return -1;
+    }
+
+    LoadedFile *loaded_file_head = NULL;
+    LoadedFile **loaded_file_tail = &loaded_file_head;
+
+    for (int i = 0;; i++) {
+
+        LoadedFile *loaded_file = load_file(path);
+        if (loaded_file == NULL) {
+            TRACE("Couldn't load file '%.*s'", path.len, path.ptr);
+            free_loaded_files(loaded_file_head);
+            return -1;
+        }
+
+        *loaded_file_tail = loaded_file;
+        loaded_file_tail = &loaded_file->next;
+
+        WL_String content = { loaded_file->data, loaded_file->len };
+        WL_AddResult result = wl_compiler_add(compiler, content);
+
+        if (result.type == WL_ADD_ERROR) {
+            TRACE("Compilation failed (%s)", wl_compiler_error(compiler).ptr);
+            free_loaded_files(loaded_file_head);
+            return -1;
+        }
+
+        if (result.type == WL_ADD_LINK) break;
+
+        assert(result.type == WL_ADD_AGAIN);
+        path = result.path;
+    }
+
+    int ret = wl_compiler_link(compiler, program);
+    if (ret < 0) {
+        TRACE("Compilation failed (%s)", wl_compiler_error(compiler).ptr);
+        return -1;
+    }
+
+    free_loaded_files(loaded_file_head);
+
+    TRACE("Compilation succeded");
+    return 0;
+}
+
+static int query_routine(WL_Runtime *rt, SQLiteCache *dbcache)
+{
+    int num_args = wl_arg_count(rt);
+    if (num_args == 0)
+        return 0;
+
+    WL_String format;
+    if (!wl_arg_str(rt, 0, &format))
+        return -1;
+
+    sqlite3_stmt *stmt;
+    int ret = sqlite3utils_prepare(dbcache, &stmt, format.ptr, format.len);
+    if (ret != SQLITE_OK)
+        return -1;
+
+    for (int i = 1; i < num_args; i++) {
+
+        int64_t ival;
+        double  fval;
+        WL_String str;
+
+        if (wl_arg_none(rt, i))
+            ret = sqlite3_bind_null(stmt, i);
+        else if (wl_arg_s64(rt, i, &ival))
+            ret = sqlite3_bind_int64(stmt, i, ival);
+        else if (wl_arg_f64(rt, i, &fval))
+            ret = sqlite3_bind_double(stmt, i, fval);
+        else if (wl_arg_str(rt, i, &str))
+            ret = sqlite3_bind_text(stmt, i, str.ptr, str.len, NULL);
+        else {
+            assert(0); // TODO
+        }
+
+        if (ret != SQLITE_OK) {
+            sqlite3_reset(stmt);
+            return -1;
+        }
+    }
+
+    wl_push_array(rt, 0);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+
+        int num_cols = sqlite3_column_count(stmt);
+        if (num_cols < 0) {
+            sqlite3_reset(stmt);
+            return -1;
+        }
+
+        wl_push_map(rt, num_cols);
+
+        for (int i = 0; i < num_cols; i++) {
+            ret = sqlite3_column_type(stmt, i);
+            switch (ret) {
+
+                case SQLITE_INTEGER:
+                {
+                    int64_t x = sqlite3_column_int64(stmt, i);
+                    wl_push_s64(rt, x);
+                }
+                break;
+
+                case SQLITE_FLOAT:
+                {
+                    double x = sqlite3_column_double(stmt, i);
+                    wl_push_f64(rt, x);
+                }
+                break;
+
+                case SQLITE_TEXT:
+                {
+                    const void *x = sqlite3_column_text(stmt, i);
+                    int n = sqlite3_column_bytes(stmt, i);
+                    wl_push_str(rt, (WL_String) { (char*) x, n });
+                }
+                break;
+
+                case SQLITE_BLOB:
+                {
+                    const void *x = sqlite3_column_blob(stmt, i);
+                    int n = sqlite3_column_bytes(stmt, i);
+                    wl_push_str(rt, (WL_String) { (char*) x, n });
+                }
+                break;
+
+                case SQLITE_NULL:
+                {
+                    wl_push_none(rt);
+                }
+                break;
+            }
+
+            const char *name = sqlite3_column_name(stmt, i);
+
+            wl_push_str(rt, (WL_String) { (char*) name, strlen(name) });
+            wl_insert(rt);
+        }
+
+        wl_append(rt);
+    }
+
+    sqlite3_reset(stmt);
+    return 0;
+}
+
+static void push_sysvar(WL_Runtime *rt, WL_String name, SQLiteCache *dbcache, HTTP_String csrf, int user_id, int resource_id)
+{
+    (void) dbcache;
+
+    if (wl_streq(name, "login_user_id", -1)) {
+
+        if (user_id < 0)
+            wl_push_none(rt);
+        else
+            wl_push_s64(rt, user_id);
+
+    } else if (wl_streq(name, "resource_id", -1)) {
+
+        if (resource_id < 0)
+            wl_push_none(rt);
+        else
+            wl_push_s64(rt, resource_id);
+
+    } else if (wl_streq(name, "csrf", -1)) {
+
+        if (csrf.len == 0)
+            wl_push_none(rt);
+        else
+            wl_push_str(rt, (WL_String) { csrf.ptr, csrf.len });
+    }
+}
+
+static void push_syscall(WL_Runtime *rt, WL_String name, SQLiteCache *dbcache)
+{
+    if (wl_streq(name, "query", -1)) {
+        query_routine(rt, dbcache);
+        return;
+    }
+}
+
+static int get_or_create_program(TemplateCache *cache, WL_String path, WL_Arena *arena, WL_Program *program)
+{
+    if (cache == NULL)
+        return -1;
+
+    int i = lookup(cache, path);
+    if (cache->pool[i].pathlen == -1) {
+
+        WL_Program program;
+        int ret = compile(path, &program, arena);
+        if (ret < 0) return -1;
+
+        void *p = malloc(program.len);
+        if (p == NULL)
+            return -1;
+        memcpy(p, program.ptr, program.len);
+        program.ptr = p;
+
+        if ((int) sizeof(cache->pool->path) <= path.len)
+            return -1;
+        memcpy(cache->pool[i].path, path.ptr, path.len);
+        cache->pool[i].path[path.len] = '\0';
+        cache->pool[i].pathlen = path.len;
+        cache->pool[i].program = program;
+    }
+
+    *program = cache->pool[i].program;
+    return 0;
+}
+
+void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id)
+{
+    http_response_builder_status(req->builder, status);
+
+    WL_Program program;
+    int ret = get_or_create_program(req->cweb->tpcache, template_file, &req->arena, &program);
+    if (ret < 0) {
+        http_response_builder_undo(req->builder);
+        http_response_builder_status(req->builder, 500);
+        http_response_builder_done(req->builder);
+        return;
+    }
+
+    //wl_dump_program(program);
+
+    WL_Runtime *rt = wl_runtime_init(&req->arena, program);
+    if (rt == NULL) {
+        http_response_builder_undo(req->builder);
+        http_response_builder_status(req->builder, 500);
+        http_response_builder_done(req->builder);
+        return;
+    }
+
+    for (bool done = false; !done; ) {
+
+        WL_EvalResult result = wl_runtime_eval(rt);
+        switch (result.type) {
+
+            case WL_EVAL_DONE:
+            http_response_builder_done(req->builder);
+            done = true;
+            break;
+
+            case WL_EVAL_ERROR:
+            // wl_runtime_error(rt)
+            http_response_builder_undo(req->builder);
+            http_response_builder_status(req->builder, 500);
+            http_response_builder_done(req->builder);
+            return;
+
+            case WL_EVAL_SYSVAR:
+            push_sysvar(rt, result.str, req->cweb->dbcache, req->csrf, req->user_id, resource_id);
+            break;
+
+            case WL_EVAL_SYSCALL:
+            push_syscall(rt, result.str, req->cweb->dbcache);
+            break;
+
+            case WL_EVAL_OUTPUT:
+            http_response_builder_body(req->builder, (HTTP_String) { result.str.ptr, result.str.len });
+            break;
+
+            default:
+            break;
+        }
+    }
+}
