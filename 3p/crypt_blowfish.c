@@ -50,8 +50,10 @@
 #define __set_errno(val) errno = (val)
 #endif
 
+#ifndef CRYPT_BLOWFISH_NOINCLUDE
 /* Just to make sure the prototypes match the actual definitions */
 #include "crypt_blowfish.h"
+#endif // CRYPT_BLOWFISH_NOINCLUDE
 
 #ifdef __i386__
 #define BF_ASM				1

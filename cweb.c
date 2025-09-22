@@ -1,101 +1,7 @@
 #include "cweb.h"
+#define WL_NOINCLUDE
 #define HTTP_NOINCLUDE
-
-////////////////////////////////////////////////////////////////////////////////////////
-// 3p/wl.h
-////////////////////////////////////////////////////////////////////////////////////////
-
-#include <stdint.h>
-#include <stdbool.h>
-
-typedef struct WL_Runtime  WL_Runtime;
-typedef struct WL_Compiler WL_Compiler;
-
-typedef struct {
-    char *ptr;
-    int   len;
-} WL_String;
-
-typedef struct {
-    char *ptr;
-    int   len;
-    int   cur;
-} WL_Arena;
-
-typedef struct {
-    char *ptr;
-    int   len;
-} WL_Program;
-
-typedef enum {
-    WL_ADD_ERROR,
-    WL_ADD_AGAIN,
-    WL_ADD_LINK,
-} WL_AddResultType;
-
-typedef struct {
-    WL_AddResultType type;
-    WL_String        path;
-} WL_AddResult;
-
-typedef enum {
-    WL_EVAL_NONE,
-    WL_EVAL_DONE,
-    WL_EVAL_ERROR,
-    WL_EVAL_OUTPUT,
-    WL_EVAL_SYSVAR,
-    WL_EVAL_SYSCALL,
-} WL_EvalResultType;
-
-typedef struct {
-    WL_EvalResultType type;
-    WL_String str;
-} WL_EvalResult;
-
-WL_Compiler*  wl_compiler_init  (WL_Arena *arena);
-WL_AddResult  wl_compiler_add   (WL_Compiler *compiler, WL_String content);
-int           wl_compiler_link  (WL_Compiler *compiler, WL_Program *program);
-WL_String     wl_compiler_error (WL_Compiler *compiler);
-int           wl_dump_ast       (WL_Compiler *compiler, char *dst, int cap);
-void          wl_dump_program   (WL_Program program);
-
-WL_Runtime*   wl_runtime_init   (WL_Arena *arena, WL_Program program);
-WL_EvalResult wl_runtime_eval   (WL_Runtime *rt);
-WL_String     wl_runtime_error  (WL_Runtime *rt);
-void          wl_runtime_dump   (WL_Runtime *rt);
-
-bool wl_streq      (WL_String a, char *b, int blen);
-int  wl_arg_count  (WL_Runtime *rt);
-bool wl_arg_none   (WL_Runtime *rt, int idx);
-bool wl_arg_bool   (WL_Runtime *rt, int idx, bool *x);
-bool wl_arg_s64    (WL_Runtime *rt, int idx, int64_t *x);
-bool wl_arg_f64    (WL_Runtime *rt, int idx, double *x);
-bool wl_arg_str    (WL_Runtime *rt, int idx, WL_String *x);
-bool wl_arg_array  (WL_Runtime *rt, int idx);
-bool wl_arg_map    (WL_Runtime *rt, int idx);
-bool wl_peek_none  (WL_Runtime *rt, int off);
-bool wl_peek_bool  (WL_Runtime *rt, int off, bool *x);
-bool wl_peek_s64   (WL_Runtime *rt, int off, int64_t *x);
-bool wl_peek_f64   (WL_Runtime *rt, int off, double *x);
-bool wl_peek_str   (WL_Runtime *rt, int off, WL_String *x);
-bool wl_pop_any    (WL_Runtime *rt);
-bool wl_pop_none   (WL_Runtime *rt);
-bool wl_pop_bool   (WL_Runtime *rt, bool *x);
-bool wl_pop_s64    (WL_Runtime *rt, int64_t *x);
-bool wl_pop_f64    (WL_Runtime *rt, double *x);
-bool wl_pop_str    (WL_Runtime *rt, WL_String *x);
-void wl_push_none  (WL_Runtime *rt);
-void wl_push_true  (WL_Runtime *rt);
-void wl_push_false (WL_Runtime *rt);
-void wl_push_s64   (WL_Runtime *rt, int64_t x);
-void wl_push_f64   (WL_Runtime *rt, double x);
-void wl_push_str   (WL_Runtime *rt, WL_String x);
-void wl_push_array (WL_Runtime *rt, int cap);
-void wl_push_map   (WL_Runtime *rt, int cap);
-void wl_push_arg   (WL_Runtime *rt, int idx);
-void wl_insert     (WL_Runtime *rt);
-void wl_append     (WL_Runtime *rt);
-
+#define CRYPT_BLOWFISH_NOINCLUDE
 ////////////////////////////////////////////////////////////////////////////////////////
 // 3p/chttp.h
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -6284,8 +6190,10 @@ extern char *_crypt_gensalt_blowfish_rn(const char *prefix,
 #define __set_errno(val) errno = (val)
 #endif
 
+#ifndef CRYPT_BLOWFISH_NOINCLUDE
 /* Just to make sure the prototypes match the actual definitions */
 #include "crypt_blowfish.h"
+#endif // CRYPT_BLOWFISH_NOINCLUDE
 
 #ifdef __i386__
 #define BF_ASM				1
@@ -7141,6 +7049,101 @@ char *_crypt_gensalt_blowfish_rn(const char *prefix, unsigned long count,
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
+// 3p/wl.h
+////////////////////////////////////////////////////////////////////////////////////////
+
+#include <stdint.h>
+#include <stdbool.h>
+
+typedef struct WL_Runtime  WL_Runtime;
+typedef struct WL_Compiler WL_Compiler;
+
+typedef struct {
+    char *ptr;
+    int   len;
+} WL_String;
+
+typedef struct {
+    char *ptr;
+    int   len;
+    int   cur;
+} WL_Arena;
+
+typedef struct {
+    char *ptr;
+    int   len;
+} WL_Program;
+
+typedef enum {
+    WL_ADD_ERROR,
+    WL_ADD_AGAIN,
+    WL_ADD_LINK,
+} WL_AddResultType;
+
+typedef struct {
+    WL_AddResultType type;
+    WL_String        path;
+} WL_AddResult;
+
+typedef enum {
+    WL_EVAL_NONE,
+    WL_EVAL_DONE,
+    WL_EVAL_ERROR,
+    WL_EVAL_OUTPUT,
+    WL_EVAL_SYSVAR,
+    WL_EVAL_SYSCALL,
+} WL_EvalResultType;
+
+typedef struct {
+    WL_EvalResultType type;
+    WL_String str;
+} WL_EvalResult;
+
+WL_Compiler*  wl_compiler_init  (WL_Arena *arena);
+WL_AddResult  wl_compiler_add   (WL_Compiler *compiler, WL_String content);
+int           wl_compiler_link  (WL_Compiler *compiler, WL_Program *program);
+WL_String     wl_compiler_error (WL_Compiler *compiler);
+int           wl_dump_ast       (WL_Compiler *compiler, char *dst, int cap);
+void          wl_dump_program   (WL_Program program);
+
+WL_Runtime*   wl_runtime_init   (WL_Arena *arena, WL_Program program);
+WL_EvalResult wl_runtime_eval   (WL_Runtime *rt);
+WL_String     wl_runtime_error  (WL_Runtime *rt);
+void          wl_runtime_dump   (WL_Runtime *rt);
+
+bool wl_streq      (WL_String a, char *b, int blen);
+int  wl_arg_count  (WL_Runtime *rt);
+bool wl_arg_none   (WL_Runtime *rt, int idx);
+bool wl_arg_bool   (WL_Runtime *rt, int idx, bool *x);
+bool wl_arg_s64    (WL_Runtime *rt, int idx, int64_t *x);
+bool wl_arg_f64    (WL_Runtime *rt, int idx, double *x);
+bool wl_arg_str    (WL_Runtime *rt, int idx, WL_String *x);
+bool wl_arg_array  (WL_Runtime *rt, int idx);
+bool wl_arg_map    (WL_Runtime *rt, int idx);
+bool wl_peek_none  (WL_Runtime *rt, int off);
+bool wl_peek_bool  (WL_Runtime *rt, int off, bool *x);
+bool wl_peek_s64   (WL_Runtime *rt, int off, int64_t *x);
+bool wl_peek_f64   (WL_Runtime *rt, int off, double *x);
+bool wl_peek_str   (WL_Runtime *rt, int off, WL_String *x);
+bool wl_pop_any    (WL_Runtime *rt);
+bool wl_pop_none   (WL_Runtime *rt);
+bool wl_pop_bool   (WL_Runtime *rt, bool *x);
+bool wl_pop_s64    (WL_Runtime *rt, int64_t *x);
+bool wl_pop_f64    (WL_Runtime *rt, double *x);
+bool wl_pop_str    (WL_Runtime *rt, WL_String *x);
+void wl_push_none  (WL_Runtime *rt);
+void wl_push_true  (WL_Runtime *rt);
+void wl_push_false (WL_Runtime *rt);
+void wl_push_s64   (WL_Runtime *rt, int64_t x);
+void wl_push_f64   (WL_Runtime *rt, double x);
+void wl_push_str   (WL_Runtime *rt, WL_String x);
+void wl_push_array (WL_Runtime *rt, int cap);
+void wl_push_map   (WL_Runtime *rt, int cap);
+void wl_push_arg   (WL_Runtime *rt, int idx);
+void wl_insert     (WL_Runtime *rt);
+void wl_append     (WL_Runtime *rt);
+
+////////////////////////////////////////////////////////////////////////////////////////
 // 3p/wl.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
@@ -7149,7 +7152,10 @@ char *_crypt_gensalt_blowfish_rn(const char *prefix, unsigned long count,
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+
+#ifndef WL_NOINCLUDE
 #include "wl.h"
+#endif // WL_NOINCLUDE
 
 /////////////////////////////////////////////////////////////////////////
 // BASIC
@@ -13795,12 +13801,13 @@ CWEB_Request *cweb_wait(CWEB *cweb)
     CWEB_Request *req = &cweb->req;
 
     int ret = http_server_wait(cweb->server, &req->req, &req->builder);
-    if (ret < 0) return -1;
+    if (ret < 0) return NULL;
+
+    HTTP_String sess_token = http_get_cookie(req->req, HTTP_STR("sess_token"));
 
     req->arena = (WL_Arena) { cweb->pool, cweb->pool_cap, 0 };
-
     req->just_created_session = false;
-    req->sess = http_get_cookie(req->req, HTTP_STR("sess_token"));
+    req->sess = (CWEB_String) { sess_token.ptr, sess_token.len };
     if (find_session(cweb->session_storage, req->sess, &req->csrf, &req->user_id) < 0) {
         req->user_id = -1;
         req->sess = (CWEB_String) { NULL, 0 };
@@ -13978,31 +13985,23 @@ static void evaluate_format(StaticOutputBuffer *out, CWEB_String format, CWEB_VA
     }
 }
 
-static CWEB_String evaluate_format_for_request_impl(CWEB_Request *req, CWEB_String format, CWEB_VArgs args)
+CWEB_String cweb_format_impl(CWEB_Request *req, char *fmt, CWEB_VArgs args)
 {
     StaticOutputBuffer out = { 
         .dst = req->arena.ptr + req->arena.cur,
         .cap = req->arena.len - req->arena.cur,
         .len = 0
     };
-    evaluate_format(&out, format, args);
+    evaluate_format(&out, (CWEB_String) { fmt, strlen(fmt) }, args);
     if (out.len > req->arena.len - req->arena.cur)
         return (CWEB_String) { NULL, 0 };
     req->arena.cur += out.len;
     return (CWEB_String) { out.dst, out.len };
 }
-#define evaluate_format_for_request(req, format, ...) evaluate_format_for_request_impl((req), (format), CWEB_VARGS(__VA_ARGS__))
 
-void cweb_respond_redirect_impl(CWEB_Request *req, CWEB_String target_format, CWEB_VArgs args)
+void cweb_respond_redirect_impl(CWEB_Request *req, CWEB_String target)
 {
-    CWEB_String target = evaluate_format_for_request_impl(req, target_format, args);
-    if (target.len == 0) {
-        http_response_builder_status(req->builder, 500);
-        http_response_builder_done(req->builder);
-        return;
-    }
-
-    CWEB_String location_header = evaluate_format_for_request(req, CWEB_STR("Location: {}"), target);
+    CWEB_String location_header = cweb_format(req, "Location: {}", target);
     if (location_header.len == 0) {
         http_response_builder_status(req->builder, 500);
         http_response_builder_done(req->builder);

@@ -249,11 +249,12 @@ int         cweb_get_param_i(CWEB_Request *req, CWEB_String name);
 //////////////////////////////////////
 // Response
 
-void cweb_respond_basic(CWEB_Request *req, int status, CWEB_String content);
-void cweb_respond_redirect_impl(CWEB_Request *req, CWEB_String target_format, CWEB_VArgs args);
-void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id);
+CWEB_String cweb_format_impl(CWEB_Request *req, char *fmt, CWEB_VArgs args);
+#define cweb_format(req, fmt, ...) cweb_format_impl((req), (fmt), CWEB_VARGS(__VA_ARGS__))
 
-#define cweb_respond_redirect(req, format, ...) cweb_respond_redirect_impl((req), (format), CWEB_VARGS(__VA_ARGS__))
+void cweb_respond_basic(CWEB_Request *req, int status, CWEB_String content);
+void cweb_respond_redirect(CWEB_Request *req, CWEB_String target);
+void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id);
 
 //////////////////////////////////////
 // Database

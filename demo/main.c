@@ -259,7 +259,7 @@ static void endpoint_api_post(CWEB *cweb, CWEB_Request *req)
     }
     int post_id = (int) insert_id;
 
-    cweb_respond_redirect(req, CWEB_STR("/post?id={}"), post_id);
+    cweb_respond_redirect(req, cweb_format(req, "/post?id={}", post_id));
 }
 
 static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
@@ -294,7 +294,7 @@ static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    cweb_respond_redirect(req, CWEB_STR("/post?id={}"), parent_post);
+    cweb_respond_redirect(req, cweb_format(req, "/post?id={}", parent_post));
 }
 
 static void endpoint_index(CWEB *cweb, CWEB_Request *req)

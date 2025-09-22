@@ -836,7 +836,11 @@ bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str)
 
 CWEB_String cweb_get_param_s(CWEB_Request *req, CWEB_String name)
 {
-    HTTP_String res = http_get_param(req->req->body,
+    HTTP_String src = req->req->url.query;
+    if (req->req->method == HTTP_METHOD_POST)
+        src = req->req->body;
+
+    HTTP_String res = http_get_param(src,
         (HTTP_String) { name.ptr, name.len },
         req->arena.ptr + req->arena.cur,
         req->arena.len - req->arena.cur
@@ -848,7 +852,11 @@ CWEB_String cweb_get_param_s(CWEB_Request *req, CWEB_String name)
 
 int cweb_get_param_i(CWEB_Request *req, CWEB_String name)
 {
-    return http_get_param_i(req->req->body, (HTTP_String) { name.ptr, name.len });
+    HTTP_String src = req->req->url.query;
+    if (req->req->method == HTTP_METHOD_POST)
+        src = req->req->body;
+
+    return http_get_param_i(src, (HTTP_String) { name.ptr, name.len });
 }
 
 static int set_auth_cookie_if_necessary(CWEB_Request *req)
@@ -997,31 +1005,23 @@ static void evaluate_format(StaticOutputBuffer *out, CWEB_String format, CWEB_VA
     }
 }
 
-static CWEB_String evaluate_format_for_request_impl(CWEB_Request *req, CWEB_String format, CWEB_VArgs args)
+CWEB_String cweb_format_impl(CWEB_Request *req, char *fmt, CWEB_VArgs args)
 {
     StaticOutputBuffer out = { 
         .dst = req->arena.ptr + req->arena.cur,
         .cap = req->arena.len - req->arena.cur,
         .len = 0
     };
-    evaluate_format(&out, format, args);
+    evaluate_format(&out, (CWEB_String) { fmt, strlen(fmt) }, args);
     if (out.len > req->arena.len - req->arena.cur)
         return (CWEB_String) { NULL, 0 };
     req->arena.cur += out.len;
     return (CWEB_String) { out.dst, out.len };
 }
-#define evaluate_format_for_request(req, format, ...) evaluate_format_for_request_impl((req), (format), CWEB_VARGS(__VA_ARGS__))
 
-void cweb_respond_redirect_impl(CWEB_Request *req, CWEB_String target_format, CWEB_VArgs args)
+void cweb_respond_redirect(CWEB_Request *req, CWEB_String target)
 {
-    CWEB_String target = evaluate_format_for_request_impl(req, target_format, args);
-    if (target.len == 0) {
-        http_response_builder_status(req->builder, 500);
-        http_response_builder_done(req->builder);
-        return;
-    }
-
-    CWEB_String location_header = evaluate_format_for_request(req, CWEB_STR("Location: {}"), target);
+    CWEB_String location_header = cweb_format(req, "Location: {}", target);
     if (location_header.len == 0) {
         http_response_builder_status(req->builder, 500);
         http_response_builder_done(req->builder);
@@ -1342,7 +1342,7 @@ static int query_routine(WL_Runtime *rt, SQLiteCache *dbcache)
     return 0;
 }
 
-static void push_sysvar(WL_Runtime *rt, WL_String name, SQLiteCache *dbcache, HTTP_String csrf, int user_id, int resource_id)
+static void push_sysvar(WL_Runtime *rt, WL_String name, SQLiteCache *dbcache, CWEB_String csrf, int user_id, int resource_id)
 {
     (void) dbcache;
 
@@ -1410,6 +1410,13 @@ static int get_or_create_program(TemplateCache *cache, WL_String path, WL_Arena 
 void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id)
 {
     http_response_builder_status(req->builder, status);
+    int ret = set_auth_cookie_if_necessary(req);
+    if (ret < 0) {
+        http_response_builder_undo(req->builder);
+        http_response_builder_status(req->builder, -ret);
+        http_response_builder_done(req->builder);
+        return;
+    }
 
     WL_Program program;
     int ret = get_or_create_program(req->cweb->tpcache, template_file, &req->arena, &program);
