@@ -5,7 +5,6 @@
 // 3p/wl.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#line 1 "3p/wl.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -101,7 +100,6 @@ void wl_append     (WL_Runtime *rt);
 // 3p/chttp.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#line 1 "3p/chttp.h"
 #ifndef HTTP_AMALGAMATION
 #define HTTP_AMALGAMATION
 
@@ -633,7 +631,6 @@ int          http_serve          (char *addr, int port, HTTP_Router *router);
 // 3p/chttp.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#line 1 "3p/chttp.c"
 #ifndef HTTP_NOINCLUDE
 #include "chttp.h"
 #endif
@@ -6203,7 +6200,6 @@ int http_serve(char *addr, int port, HTTP_Router *router)
 // 3p/crypt_blowfish.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#line 1 "3p/crypt_blowfish.h"
 /*
  * Written by Solar Designer <solar at openwall.com> in 2000-2011.
  * No copyright is claimed, and the software is hereby placed in the public
@@ -6236,7 +6232,6 @@ extern char *_crypt_gensalt_blowfish_rn(const char *prefix,
 // 3p/crypt_blowfish.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#line 1 "3p/crypt_blowfish.c"
 /*
  * The crypt_blowfish homepage is:
  *
@@ -7149,7 +7144,6 @@ char *_crypt_gensalt_blowfish_rn(const char *prefix, unsigned long count,
 // 3p/wl.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#line 1 "3p/wl.c"
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -12985,7 +12979,6 @@ void wl_runtime_dump(WL_Runtime *rt)
 // src/main.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#line 1 "src/main.c"
 #include "sqlite3.h"
 #include "wl.h"
 #include "chttp.h"
@@ -13099,7 +13092,8 @@ CWEB_VArg cweb_varg_from_ull  (long long ull)     { return (CWEB_VArg) { CWEB_VA
 CWEB_VArg cweb_varg_from_f    (float f)           { return (CWEB_VArg) { CWEB_VARG_TYPE_F,    .f=f       }; }
 CWEB_VArg cweb_varg_from_d    (double d)          { return (CWEB_VArg) { CWEB_VARG_TYPE_D,    .d=d       }; }
 CWEB_VArg cweb_varg_from_b    (bool b)            { return (CWEB_VArg) { CWEB_VARG_TYPE_B,    .b=b       }; }
-CWEB_VArg cweb_varg_from_str  (HTTP_String str)   { return (CWEB_VArg) { CWEB_VARG_TYPE_STR,  .str=str   }; }
+CWEB_VArg cweb_varg_from_str  (CWEB_String str)   { return (CWEB_VArg) { CWEB_VARG_TYPE_STR,  .str=str   }; }
+CWEB_VArg cweb_varg_from_hash (CWEB_PasswordHash hash) { return (CWEB_VArg) { CWEB_VARG_TYPE_HASH, .hash=hash }; }
 CWEB_VArg cweb_varg_from_pc   (char *pc)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PC,   .pc=pc     }; }
 CWEB_VArg cweb_varg_from_ps   (short *ps)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PS,   .ps=ps     }; }
 CWEB_VArg cweb_varg_from_pi   (int *pi)           { return (CWEB_VArg) { CWEB_VARG_TYPE_PI,   .pi=pi     }; }
@@ -13118,8 +13112,8 @@ CWEB_VArg cweb_varg_from_pull (long long *pull)   { return (CWEB_VArg) { CWEB_VA
 CWEB_VArg cweb_varg_from_pf   (float *pf)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PF,   .pf=pf     }; }
 CWEB_VArg cweb_varg_from_pd   (double *pd)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PD,   .pd=pd     }; }
 CWEB_VArg cweb_varg_from_pb   (bool *pb)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PB,   .pb=pb     }; }
-CWEB_VArg cweb_varg_from_pstr (HTTP_String *pstr) { return (CWEB_VArg) { CWEB_VARG_TYPE_PSTR, .pstr=pstr }; }
-
+CWEB_VArg cweb_varg_from_pstr (CWEB_String *pstr) { return (CWEB_VArg) { CWEB_VARG_TYPE_PSTR, .pstr=pstr }; }
+CWEB_VArg cweb_varg_from_phash(CWEB_PasswordHash *phash) { return (CWEB_VArg) { CWEB_VARG_TYPE_PHASH, .phash=phash }; }
 
 /////////////////////////////////////////////////////////////////
 // RANDOM
@@ -13816,6 +13810,11 @@ CWEB_Request *cweb_wait(CWEB *cweb)
     return req;
 }
 
+bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str)
+{
+    return http_streq(req->req->url.path, (HTTP_String) { str.ptr, str.len });
+}
+
 CWEB_String cweb_get_param_s(CWEB_Request *req, CWEB_String name)
 {
     HTTP_String res = http_get_param(req->req->body,
@@ -13859,12 +13858,155 @@ void cweb_respond(CWEB_Request *req, int status, CWEB_String content)
     http_response_builder_done(req->builder);
 }
 
-void cweb_respond_redirect(CWEB_Request *req, CWEB_String target)
+typedef struct {
+    char *dst;
+    int   cap;
+    int   len;
+} StaticOutputBuffer;
+
+static void append_to_output(StaticOutputBuffer *out, char *src, int len)
 {
-    char location[128];
-    int ret = snprintf(location, sizeof(location), "Location: %.*s", target.len, target.ptr);
-    if (ret < 0 || ret >= SIZEOF(location)) {
-        // TODO
+    int unused = out->cap - out->len;
+    if (unused > 0)
+        memcpy(out->dst + out->len, src, MIN(len, unused));
+    out->len += len;
+}
+
+static void append_to_output_u64(StaticOutputBuffer *out, uint64_t n)
+{
+    // TODO
+}
+
+static void append_to_output_s64(StaticOutputBuffer *out, int64_t n)
+{
+    // TODO
+}
+
+static void append_to_output_ptr(StaticOutputBuffer *out, void *p)
+{
+    // TODO
+}
+
+static void value_to_output(StaticOutputBuffer *out, CWEB_VArg arg)
+{
+    switch (arg.type) {
+        case CWEB_VARG_TYPE_C    : append_to_output(out, &arg.c, 1);     break;
+        case CWEB_VARG_TYPE_S    : append_to_output_s64(out, arg.s);     break;
+        case CWEB_VARG_TYPE_I    : append_to_output_s64(out, arg.i);     break;
+        case CWEB_VARG_TYPE_L    : append_to_output_s64(out, arg.l);     break;
+        case CWEB_VARG_TYPE_LL   : append_to_output_s64(out, arg.ll);    break;
+        case CWEB_VARG_TYPE_SC   : append_to_output_s64(out, arg.sc);    break;
+        case CWEB_VARG_TYPE_SS   : append_to_output_s64(out, arg.ss);    break;
+        case CWEB_VARG_TYPE_SI   : append_to_output_s64(out, arg.si);    break;
+        case CWEB_VARG_TYPE_SL   : append_to_output_s64(out, arg.sl);    break;
+        case CWEB_VARG_TYPE_SLL  : append_to_output_s64(out, arg.sll);   break;
+        case CWEB_VARG_TYPE_UC   : append_to_output_u64(out, arg.uc);    break;
+        case CWEB_VARG_TYPE_US   : append_to_output_u64(out, arg.us);    break;
+        case CWEB_VARG_TYPE_UI   : append_to_output_u64(out, arg.ui);    break;
+        case CWEB_VARG_TYPE_UL   : append_to_output_u64(out, arg.ul);    break;
+        case CWEB_VARG_TYPE_ULL  : append_to_output_u64(out, arg.ull);   break;
+        case CWEB_VARG_TYPE_F    : append_to_output_f64(out, arg.f);     break;
+        case CWEB_VARG_TYPE_D    : append_to_output_u64(out, arg.d);     break;
+        case CWEB_VARG_TYPE_B    : append_to_output(out, arg.b ? "true" : "false", arg.b ? 4: 5);break;
+        case CWEB_VARG_TYPE_STR  : append_to_output(out, arg.str.ptr, arg.str.len); break;
+        case CWEB_VARG_TYPE_HASH : append_to_output(out, arg.hash.data, strlen(arg.hash.data)); break;
+        case CWEB_VARG_TYPE_PC   : append_to_output_ptr(out, arg.pc);    break;
+        case CWEB_VARG_TYPE_PS   : append_to_output_ptr(out, arg.ps);    break;
+        case CWEB_VARG_TYPE_PI   : append_to_output_ptr(out, arg.pi);    break;
+        case CWEB_VARG_TYPE_PL   : append_to_output_ptr(out, arg.pl);    break;
+        case CWEB_VARG_TYPE_PLL  : append_to_output_ptr(out, arg.pll);   break;
+        case CWEB_VARG_TYPE_PSC  : append_to_output_ptr(out, arg.psc);   break;
+        case CWEB_VARG_TYPE_PSS  : append_to_output_ptr(out, arg.pss);   break;
+        case CWEB_VARG_TYPE_PSI  : append_to_output_ptr(out, arg.psi);   break;
+        case CWEB_VARG_TYPE_PSL  : append_to_output_ptr(out, arg.psl);   break;
+        case CWEB_VARG_TYPE_PSLL : append_to_output_ptr(out, arg.psll);  break;
+        case CWEB_VARG_TYPE_PUC  : append_to_output_ptr(out, arg.puc);   break;
+        case CWEB_VARG_TYPE_PUS  : append_to_output_ptr(out, arg.pus);   break;
+        case CWEB_VARG_TYPE_PUI  : append_to_output_ptr(out, arg.pui);   break;
+        case CWEB_VARG_TYPE_PUL  : append_to_output_ptr(out, arg.pul);   break;
+        case CWEB_VARG_TYPE_PULL : append_to_output_ptr(out, arg.pull);  break;
+        case CWEB_VARG_TYPE_PF   : append_to_output_ptr(out, arg.pf);    break;
+        case CWEB_VARG_TYPE_PD   : append_to_output_ptr(out, arg.pd);    break;
+        case CWEB_VARG_TYPE_PB   : append_to_output_ptr(out, arg.pb);    break;
+        case CWEB_VARG_TYPE_PSTR : append_to_output_ptr(out, arg.pstr);  break;
+        case CWEB_VARG_TYPE_PHASH: append_to_output_ptr(out, arg.phash); break;
+    }
+}
+
+static void evaluate_format(StaticOutputBuffer *out, CWEB_String format, CWEB_VArgs args)
+{
+    char *src = format.ptr;
+    int   len = format.len;
+    int   cur = 0;
+    int   arg_idx = 0;
+
+    for (;;) {
+
+        int off = cur;
+        while (cur < len && src[cur] != '{' && src[cur] != '\\')
+            cur++;
+
+        if (cur > off)
+            append_to_output(out, src + off, cur - off);
+
+        if (cur == len)
+            break;
+        cur++;
+
+        if (src[cur-1] == '{') {
+
+            while (cur < len && src[cur] != '}')
+                cur++;
+
+            if (cur < len) {
+                assert(src[cur] == '}');
+                cur++;
+            }
+
+            if (arg_idx < args.len) {
+                value_to_output(out, args.ptr[arg_idx]);
+                arg_idx++;
+            }
+
+        } else {
+            assert(src[cur-1] == '\\');
+            if (cur < len) {
+                append_to_output(out, &src[cur], 1);
+                cur++;
+            }
+        }
+    }
+}
+
+static CWEB_String evaluate_format_for_request_impl(CWEB_Request *req, CWEB_String format, CWEB_VArgs args)
+{
+    StaticOutputBuffer out = { 
+        .dst = req->arena.ptr + req->arena.cur,
+        .cap = req->arena.len - req->arena.cur,
+        .len = 0
+    };
+    evaluate_format(&out, format, args);
+    if (out.len > req->arena.len - req->arena.cur)
+        return (CWEB_String) { NULL, 0 };
+    req->arena.cur += out.len;
+    return (CWEB_String) { out.dst, out.len };
+}
+#define evaluate_format_for_request(req, format, ...) evaluate_format_for_request_impl((req), (format), CWEB_VARGS(__VA_ARGS__))
+
+void cweb_respond_redirect_impl(CWEB_Request *req, CWEB_String target_format, CWEB_VArgs args)
+{
+    CWEB_String target = evaluate_format_for_request_impl(req, target_format, args);
+    if (target.len == 0) {
+        http_response_builder_status(req->builder, 500);
+        http_response_builder_done(req->builder);
+        return;
+    }
+
+    CWEB_String location_header = evaluate_format_for_request(req, CWEB_STR("Location: {}"), target);
+    if (location_header.len == 0) {
+        http_response_builder_status(req->builder, 500);
+        http_response_builder_done(req->builder);
+        return;
     }
 
     http_response_builder_status(req->builder, 303);
@@ -13875,7 +14017,7 @@ void cweb_respond_redirect(CWEB_Request *req, CWEB_String target)
         http_response_builder_done(req->builder);
         return;
     }
-    http_response_builder_header(req->builder, (HTTP_String) { location, ret });
+    http_response_builder_header(req->builder, (HTTP_String) { location_header.ptr, location_header.len });
     http_response_builder_done(req->builder);
 }
 

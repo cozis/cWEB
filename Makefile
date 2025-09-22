@@ -9,7 +9,7 @@ endif
 
 all: cweb.c cweb.h cozisnews$(EXT)
 
-cweb.c cweb.h:
+cweb.c cweb.h: src/main.c src/main.h
 	python amalg.py
 
 sqlite3.o: demo/sqlite3.c

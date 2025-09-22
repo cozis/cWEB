@@ -125,7 +125,7 @@ static int user_exists(CWEB *cweb, CWEB_String name, CWEB_String pass)
         return 0;
     }
 
-    ret = check_password(pass.ptr, pass.len, hash);
+    ret = cweb_check_password(pass.ptr, pass.len, hash);
     if (ret < 0) {
         cweb_free_query_result(&res);
         return -500;
@@ -140,7 +140,7 @@ static int user_exists(CWEB *cweb, CWEB_String name, CWEB_String pass)
 
 static void endpoint_api_login(CWEB *cweb, CWEB_Request *req)
 {
-    if (cweb_get_user_id(req) != -1) {
+    if (cweb_get_session_user_id(req) != -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -157,7 +157,7 @@ static void endpoint_api_login(CWEB *cweb, CWEB_Request *req)
         cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid credentials</div>"));
         return;
     }
-    if (cweb_set_user_id(req, ret) < 0) {
+    if (cweb_set_session_user_id(req, ret) < 0) {
         // TODO
     }
 
@@ -166,7 +166,7 @@ static void endpoint_api_login(CWEB *cweb, CWEB_Request *req)
 
 static void endpoint_api_signup(CWEB *cweb, CWEB_Request *req)
 {
-    if (cweb_get_user_id(req) != -1) {
+    if (cweb_get_session_user_id(req) != -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -199,7 +199,7 @@ static void endpoint_api_signup(CWEB *cweb, CWEB_Request *req)
         cweb_respond_basic(req, 400, CWEB_STR("<div class=\"error\">Internal error</div>"));
         return;
     }
-    cweb_set_user_id(req, insert_id);
+    cweb_set_session_user_id(req, insert_id);
 
     cweb_respond_redirect(req, CWEB_STR("/index"));
 }
@@ -259,7 +259,7 @@ static void endpoint_api_post(CWEB *cweb, CWEB_Request *req)
     }
     int post_id = (int) insert_id;
 
-    cweb_respond_redirect(req, "/post?id=%d", post_id);
+    cweb_respond_redirect(req, CWEB_STR("/post?id={}"), post_id);
 }
 
 static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
@@ -294,7 +294,7 @@ static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    cweb_respond_redirect(req, "/post?id=%d", parent_post);
+    cweb_respond_redirect(req, CWEB_STR("/post?id={}"), parent_post);
 }
 
 static void endpoint_index(CWEB *cweb, CWEB_Request *req)
