@@ -140,7 +140,7 @@ static int user_exists(CWEB *cweb, CWEB_String name, CWEB_String pass)
 
 static void endpoint_api_login(CWEB *cweb, CWEB_Request *req)
 {
-    if (cweb_get_session_user_id(req) != -1) {
+    if (cweb_get_user_id(req) != -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -157,7 +157,7 @@ static void endpoint_api_login(CWEB *cweb, CWEB_Request *req)
         cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid credentials</div>"));
         return;
     }
-    if (cweb_set_session_user_id(req, ret) < 0) {
+    if (cweb_set_user_id(req, ret) < 0) {
         // TODO
     }
 
@@ -166,7 +166,7 @@ static void endpoint_api_login(CWEB *cweb, CWEB_Request *req)
 
 static void endpoint_api_signup(CWEB *cweb, CWEB_Request *req)
 {
-    if (cweb_get_session_user_id(req) != -1) {
+    if (cweb_get_user_id(req) != -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -199,20 +199,22 @@ static void endpoint_api_signup(CWEB *cweb, CWEB_Request *req)
         cweb_respond_basic(req, 400, CWEB_STR("<div class=\"error\">Internal error</div>"));
         return;
     }
-    cweb_set_session_user_id(req, insert_id);
+    cweb_set_user_id(req, insert_id);
 
     cweb_respond_redirect(req, CWEB_STR("/index"));
 }
 
 static void endpoint_api_logout(CWEB *cweb, CWEB_Request *req)
 {
-    cweb_set_session_user_id(req, -1);
+    (void) cweb;
+
+    cweb_set_user_id(req, -1);
     cweb_respond_redirect(req, CWEB_STR("/index"));
 }
 
 static void endpoint_api_post(CWEB *cweb, CWEB_Request *req)
 {
-    int user_id = cweb_get_session_user_id(req);
+    int user_id = cweb_get_user_id(req);
     if (user_id == -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
@@ -223,7 +225,7 @@ static void endpoint_api_post(CWEB *cweb, CWEB_Request *req)
     CWEB_String content = cweb_get_param_s(req, CWEB_STR("content"));
     CWEB_String csrf    = cweb_get_param_s(req, CWEB_STR("csrf"));
 
-    if (!cweb_streq(cweb_get_session_csrf(req), csrf)) {
+    if (!cweb_streq(cweb_get_csrf(req), csrf)) {
         cweb_respond_basic(req, 400, CWEB_STR("Invalid request"));
         return;
     }
@@ -264,7 +266,7 @@ static void endpoint_api_post(CWEB *cweb, CWEB_Request *req)
 
 static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
 {
-    int user_id = cweb_get_session_user_id(req);
+    int user_id = cweb_get_user_id(req);
     if (user_id == -1) {
         cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">You are not logged in</div>"));
         return;
@@ -275,7 +277,7 @@ static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
     CWEB_String content = cweb_get_param_s(req, CWEB_STR("content"));
     CWEB_String csrf2   = cweb_get_param_s(req, CWEB_STR("csrf"));
 
-    if (!cweb_streq(cweb_get_session_csrf(req), csrf2)) {
+    if (!cweb_streq(cweb_get_csrf(req), csrf2)) {
         cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid request</div>"));
         return;
     }
@@ -299,12 +301,16 @@ static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
 
 static void endpoint_index(CWEB *cweb, CWEB_Request *req)
 {
+    (void) cweb;
+
     cweb_respond_template(req, 200, CWEB_STR("pages/index.wl"), -1);
 }
 
 static void endpoint_write(CWEB *cweb, CWEB_Request *req)
 {
-    if (cweb_get_session_user_id(req) == -1) {
+    (void) cweb;
+
+    if (cweb_get_user_id(req) == -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -314,7 +320,9 @@ static void endpoint_write(CWEB *cweb, CWEB_Request *req)
 
 static void endpoint_login(CWEB *cweb, CWEB_Request *req)
 {
-    if (cweb_get_session_user_id(req) != -1) {
+    (void) cweb;
+
+    if (cweb_get_user_id(req) != -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -324,7 +332,9 @@ static void endpoint_login(CWEB *cweb, CWEB_Request *req)
 
 static void endpoint_signup(CWEB *cweb, CWEB_Request *req)
 {
-    if (cweb_get_session_user_id(req) != -1) {
+    (void) cweb;
+
+    if (cweb_get_user_id(req) != -1) {
         cweb_respond_redirect(req, CWEB_STR("/index"));
         return;
     }
@@ -340,8 +350,7 @@ static void endpoint_post(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    CWEB_QueryResult res = cweb_database_select(cweb,
-        "SELECT COUNT(*) FROM Posts WHERE id=?", post_id);
+    CWEB_QueryResult res = cweb_database_select(cweb, "SELECT COUNT(*) FROM Posts WHERE id=?", post_id);
 
     int num;
     if (cweb_next_query_row(&res, &num) != 1) {
@@ -366,6 +375,8 @@ static void endpoint_post(CWEB *cweb, CWEB_Request *req)
 
 static void endpoint_fallback(CWEB *cweb, CWEB_Request *req)
 {
+    (void) cweb;
+
     cweb_respond_template(req, 404, CWEB_STR("pages/notfound.wl"), -1);
 }
 

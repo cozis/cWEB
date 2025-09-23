@@ -1,6 +1,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define CWEB_ENABLE_DATABASE
+#define CWEB_ENABLE_TEMPLATE
+
 #define CWEB_STR(X) (CWEB_String) { (X), (int) sizeof(X)-1 }
 
 typedef struct {
@@ -134,16 +137,16 @@ CWEB_VArg cweb_varg_from_ps   (short *ps);
 CWEB_VArg cweb_varg_from_pi   (int *pi);
 CWEB_VArg cweb_varg_from_pl   (long *pl);
 CWEB_VArg cweb_varg_from_pll  (long long *pll);
-CWEB_VArg cweb_varg_from_psc  (char *psc);
-CWEB_VArg cweb_varg_from_pss  (short *pss);
-CWEB_VArg cweb_varg_from_psi  (int *psi);
-CWEB_VArg cweb_varg_from_psl  (long *psl);
-CWEB_VArg cweb_varg_from_psll (long long *psll);
-CWEB_VArg cweb_varg_from_puc  (char *puc);
-CWEB_VArg cweb_varg_from_pus  (short *pus);
-CWEB_VArg cweb_varg_from_pui  (int *pui);
-CWEB_VArg cweb_varg_from_pul  (long *pul);
-CWEB_VArg cweb_varg_from_pull (long long *pull);
+CWEB_VArg cweb_varg_from_psc  (signed char *psc);
+CWEB_VArg cweb_varg_from_pss  (signed short *pss);
+CWEB_VArg cweb_varg_from_psi  (signed int *psi);
+CWEB_VArg cweb_varg_from_psl  (signed long *psl);
+CWEB_VArg cweb_varg_from_psll (signed long long *psll);
+CWEB_VArg cweb_varg_from_puc  (unsigned char *puc);
+CWEB_VArg cweb_varg_from_pus  (unsigned short *pus);
+CWEB_VArg cweb_varg_from_pui  (unsigned int *pui);
+CWEB_VArg cweb_varg_from_pul  (unsigned long *pul);
+CWEB_VArg cweb_varg_from_pull (unsigned long long *pull);
 CWEB_VArg cweb_varg_from_pf   (float *pf);
 CWEB_VArg cweb_varg_from_pd   (double *pd);
 CWEB_VArg cweb_varg_from_pb   (bool *pb);
@@ -229,14 +232,14 @@ CWEB_Request *cweb_wait(CWEB *cweb);
 bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str);
 
 // Returns the CSRF token associated to the current session 
-CWEB_String cweb_get_session_csrf(CWEB_Request *req);
+CWEB_String cweb_get_csrf(CWEB_Request *req);
 
 // Returns the user ID for the current session, or -1 if there is no session
-int cweb_get_session_user_id(CWEB_Request *req);
+int cweb_get_user_id(CWEB_Request *req);
 
 // Sets the user ID for the current session (it must be a positive integer).
 // If the ID is -1, the session is deleted.
-int cweb_set_session_user_id(CWEB_Request *req, int user_id);
+int cweb_set_user_id(CWEB_Request *req, int user_id);
 
 // Returns the request parameter with the specified name
 // If the request uses POST, the parameter is taken from the body,
@@ -265,7 +268,7 @@ void cweb_respond_redirect(CWEB_Request *req, CWEB_String target);
 void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id);
 
 // Evaluates an SQL INSERT statement and returns the ID of the last inserted row. On error -1 is returned
-int64_t cweb_database_insert_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args);
+int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args);
 
 // Helper
 #define cweb_database_insert(cweb, fmt, ...) cweb_database_insert_impl((cweb), (fmt), CWEB_VARGS(__VA_ARGS__))
@@ -275,7 +278,7 @@ typedef struct { void *handle; } CWEB_QueryResult;
 
 // Evaluates an SQL SELECT statement, returning a scanner over the returned rows.
 // You don't have to check for errors with this function
-CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args);
+CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs args);
 
 // Helper
 #define cweb_database_select(cweb, fmt, ...) cweb_database_select_impl((cweb), (fmt), CWEB_VARGS(__VA_ARGS__))

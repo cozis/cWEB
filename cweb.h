@@ -10,6 +10,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define CWEB_ENABLE_DATABASE
+#define CWEB_ENABLE_TEMPLATE
+
 #define CWEB_STR(X) (CWEB_String) { (X), (int) sizeof(X)-1 }
 
 typedef struct {
@@ -143,16 +146,16 @@ CWEB_VArg cweb_varg_from_ps   (short *ps);
 CWEB_VArg cweb_varg_from_pi   (int *pi);
 CWEB_VArg cweb_varg_from_pl   (long *pl);
 CWEB_VArg cweb_varg_from_pll  (long long *pll);
-CWEB_VArg cweb_varg_from_psc  (char *psc);
-CWEB_VArg cweb_varg_from_pss  (short *pss);
-CWEB_VArg cweb_varg_from_psi  (int *psi);
-CWEB_VArg cweb_varg_from_psl  (long *psl);
-CWEB_VArg cweb_varg_from_psll (long long *psll);
-CWEB_VArg cweb_varg_from_puc  (char *puc);
-CWEB_VArg cweb_varg_from_pus  (short *pus);
-CWEB_VArg cweb_varg_from_pui  (int *pui);
-CWEB_VArg cweb_varg_from_pul  (long *pul);
-CWEB_VArg cweb_varg_from_pull (long long *pull);
+CWEB_VArg cweb_varg_from_psc  (signed char *psc);
+CWEB_VArg cweb_varg_from_pss  (signed short *pss);
+CWEB_VArg cweb_varg_from_psi  (signed int *psi);
+CWEB_VArg cweb_varg_from_psl  (signed long *psl);
+CWEB_VArg cweb_varg_from_psll (signed long long *psll);
+CWEB_VArg cweb_varg_from_puc  (unsigned char *puc);
+CWEB_VArg cweb_varg_from_pus  (unsigned short *pus);
+CWEB_VArg cweb_varg_from_pui  (unsigned int *pui);
+CWEB_VArg cweb_varg_from_pul  (unsigned long *pul);
+CWEB_VArg cweb_varg_from_pull (unsigned long long *pull);
 CWEB_VArg cweb_varg_from_pf   (float *pf);
 CWEB_VArg cweb_varg_from_pd   (double *pd);
 CWEB_VArg cweb_varg_from_pb   (bool *pb);
@@ -230,51 +233,77 @@ void  cweb_free(CWEB *cweb);
 
 int cweb_enable_database(CWEB *cweb, CWEB_String file);
 
+// Pause execution until a request is available.
+// TODO: When does this function return NULL?
 CWEB_Request *cweb_wait(CWEB *cweb);
 
-//////////////////////////////////////
-// Session
+// Returns true iff the request matches the specified endpoint
+bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str);
 
-CWEB_String cweb_get_session_csrf(CWEB_Request *req);
-int         cweb_get_session_user_id(CWEB_Request *req);
-int         cweb_set_session_user_id(CWEB_Request *req, int user_id);
+// Returns the CSRF token associated to the current session 
+CWEB_String cweb_get_csrf(CWEB_Request *req);
 
-//////////////////////////////////////
-// Request
+// Returns the user ID for the current session, or -1 if there is no session
+int cweb_get_user_id(CWEB_Request *req);
 
-bool        cweb_match_endpoint(CWEB_Request *req, CWEB_String str);
+// Sets the user ID for the current session (it must be a positive integer).
+// If the ID is -1, the session is deleted.
+int cweb_set_user_id(CWEB_Request *req, int user_id);
+
+// Returns the request parameter with the specified name
+// If the request uses POST, the parameter is taken from the body,
+// else it's taken from the URL. If the parameter is not present,
+// an empty string is returned.
 CWEB_String cweb_get_param_s(CWEB_Request *req, CWEB_String name);
-int         cweb_get_param_i(CWEB_Request *req, CWEB_String name);
 
-//////////////////////////////////////
-// Response
+// Like cweb_get_param_s, but also parser the argument as an integer.
+// If parsing fails or the parameter is missing, -1 is returned.
+int cweb_get_param_i(CWEB_Request *req, CWEB_String name);
 
+// Create a string by evaluating a format. Memory is allocated from the arena of the request.
+// If the arena is full, an empty string is returned.
 CWEB_String cweb_format_impl(CWEB_Request *req, char *fmt, CWEB_VArgs args);
+
+// Helper
 #define cweb_format(req, fmt, ...) cweb_format_impl((req), (fmt), CWEB_VARGS(__VA_ARGS__))
 
+// Responds to the specified request with the given status code and content
 void cweb_respond_basic(CWEB_Request *req, int status, CWEB_String content);
+
+// Responds to the request by redirecting the client to the given target
 void cweb_respond_redirect(CWEB_Request *req, CWEB_String target);
+
+// Responds to the request by evaluating a WL template file
 void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id);
 
-//////////////////////////////////////
-// Database
+// Evaluates an SQL INSERT statement and returns the ID of the last inserted row. On error -1 is returned
+int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args);
 
-typedef struct {
-    void *handle;
-} CWEB_QueryResult;
-
-int64_t          cweb_database_insert_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args);
-CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args);
-int              cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args);
-void             cweb_free_query_result(CWEB_QueryResult *res);
-
+// Helper
 #define cweb_database_insert(cweb, fmt, ...) cweb_database_insert_impl((cweb), (fmt), CWEB_VARGS(__VA_ARGS__))
+
+// Iterator over database rows
+typedef struct { void *handle; } CWEB_QueryResult;
+
+// Evaluates an SQL SELECT statement, returning a scanner over the returned rows.
+// You don't have to check for errors with this function
+CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs args);
+
+// Helper
 #define cweb_database_select(cweb, fmt, ...) cweb_database_select_impl((cweb), (fmt), CWEB_VARGS(__VA_ARGS__))
-#define cweb_next_query_row(res, ...)        cweb_next_query_row_impl((res), CWEB_VARGS(__VA_ARGS__))
 
-//////////////////////////////////////
-// Password
+// Returns the next row from the query result iterator.
+int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args);
 
+// Helper
+#define cweb_next_query_row(res, ...) cweb_next_query_row_impl((res), CWEB_VARGS(__VA_ARGS__))
+
+// Frees the result of a database query
+void cweb_free_query_result(CWEB_QueryResult *res);
+
+// Calculates the bcrypt hash of the specified password
 int cweb_hash_password(char *pass, int passlen, int cost, CWEB_PasswordHash *hash);
+
+// Checks whether the password matches the given hash
 int cweb_check_password(char *pass, int passlen, CWEB_PasswordHash hash);
 #endif // CWEB_AMALGAMATION

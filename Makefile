@@ -16,7 +16,7 @@ sqlite3.o: demo/sqlite3.c
 	gcc -o $@ -c $<
 
 cozisnews$(EXT): demo/main.c cweb.c cweb.h sqlite3.o
-	gcc -o $@ demo/main.c cweb.c sqlite3.o $(FLAGS)
+	gcc -o $@ demo/main.c demo/chttp.c demo/wl.c cweb.c sqlite3.o $(FLAGS) -Idemo
 
 clean:
 	rm *.o *.out *.exe

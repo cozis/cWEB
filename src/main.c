@@ -1,7 +1,4 @@
-#include "sqlite3.h"
-#include "wl.h"
-#include "chttp.h"
-#include "cweb.h"
+#include <stdio.h>
 
 #ifdef __linux__
 #include <errno.h>
@@ -11,6 +8,25 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+
+#ifdef CWEB_ENABLE_DATABASE
+#include "sqlite3.h"
+#endif
+
+#ifdef CWEB_ENABLE_TEMPLATE
+#include "wl.h"
+#endif
+
+#include "chttp.h"
+#include "cweb.h"
+
+#define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
+#define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
+#define ASSERT(X) {if (!(X)) { __builtin_trap(); }}
+#define TRACE(X, ...) ((void) 0)
+#define SIZEOF(X) (int) (sizeof(X)/sizeof((X)[0]))
+
+#ifdef CWEB_ENABLE_TEMPLATE
 
 typedef struct {
     char           path[1<<8];
@@ -27,12 +43,16 @@ typedef struct {
 static TemplateCache *template_cache_init(int capacity_log2);
 static void           template_cache_free(TemplateCache *cache);
 
+#endif
+
 typedef struct SessionStorage SessionStorage;
+
+#ifdef CWEB_ENABLE_DATABASE
+
 typedef struct SQLiteCache SQLiteCache;
 
 static SQLiteCache* sqlite_cache_init(sqlite3 *db, int capacity_log2);
 static void         sqlite_cache_free(SQLiteCache *cache);
-static sqlite3*     sqlite_cache_getdb(SQLiteCache *cache);
 
 static int sqlite3utils_prepare(SQLiteCache *cache,
     sqlite3_stmt **pstmt, char *fmt, int fmtlen);
@@ -43,26 +63,7 @@ static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
 #define sqlite3utils_prepare_and_bind(cache, pstmt, fmt, ...) \
     sqlite3utils_prepare_and_bind_impl((cache), (pstmt), (fmt), VARGS(__VA_ARGS__))
 
-struct CWEB {
-
-    HTTP_Server *server;
-    int pool_cap;
-    char *pool;
-
-    // Login
-    SessionStorage *session_storage;
-
-    // Database
-    sqlite3 *db;
-    SQLiteCache *dbcache;
-
-    // Template
-    TemplateCache *tpcache;
-
-    bool allow_insecure_login;
-
-    CWEB_Request req;
-};
+#endif
 
 struct CWEB_Request {
 
@@ -78,6 +79,29 @@ struct CWEB_Request {
     int  user_id;
     CWEB_String sess;
     CWEB_String csrf;
+};
+
+struct CWEB {
+
+    HTTP_Server *server;
+    int pool_cap;
+    char *pool;
+
+    // Login
+    SessionStorage *session_storage;
+
+#ifdef CWEB_ENABLE_DATABASE
+    sqlite3 *db;
+    SQLiteCache *dbcache;
+#endif
+
+#ifdef CWEB_ENABLE_TEMPLATE
+    TemplateCache *tpcache;
+#endif
+
+    bool allow_insecure_login;
+
+    CWEB_Request req;
 };
 
 ///////////////////////////
@@ -118,21 +142,93 @@ CWEB_VArg cweb_varg_from_ps   (short *ps)         { return (CWEB_VArg) { CWEB_VA
 CWEB_VArg cweb_varg_from_pi   (int *pi)           { return (CWEB_VArg) { CWEB_VARG_TYPE_PI,   .pi=pi     }; }
 CWEB_VArg cweb_varg_from_pl   (long *pl)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PL,   .pl=pl     }; }
 CWEB_VArg cweb_varg_from_pll  (long long *pll)    { return (CWEB_VArg) { CWEB_VARG_TYPE_PLL,  .pll=pll   }; }
-CWEB_VArg cweb_varg_from_psc  (char *psc)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PSC,  .psc=psc   }; }
-CWEB_VArg cweb_varg_from_pss  (short *pss)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PSS,  .pss=pss   }; }
-CWEB_VArg cweb_varg_from_psi  (int *psi)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PSI,  .psi=psi   }; }
-CWEB_VArg cweb_varg_from_psl  (long *psl)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PSL,  .psl=psl   }; }
-CWEB_VArg cweb_varg_from_psll (long long *psll)   { return (CWEB_VArg) { CWEB_VARG_TYPE_PSLL, .psll=psll }; }
-CWEB_VArg cweb_varg_from_puc  (char *puc)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PUC,  .puc=puc   }; }
-CWEB_VArg cweb_varg_from_pus  (short *pus)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PUS,  .pus=pus   }; }
-CWEB_VArg cweb_varg_from_pui  (int *pui)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PUI,  .pui=pui   }; }
-CWEB_VArg cweb_varg_from_pul  (long *pul)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PUL,  .pul=pul   }; }
-CWEB_VArg cweb_varg_from_pull (long long *pull)   { return (CWEB_VArg) { CWEB_VARG_TYPE_PULL, .pull=pull }; }
+CWEB_VArg cweb_varg_from_psc  (signed char *psc)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PSC,  .psc=psc   }; }
+CWEB_VArg cweb_varg_from_pss  (signed short *pss)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PSS,  .pss=pss   }; }
+CWEB_VArg cweb_varg_from_psi  (signed int *psi)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PSI,  .psi=psi   }; }
+CWEB_VArg cweb_varg_from_psl  (signed long *psl)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PSL,  .psl=psl   }; }
+CWEB_VArg cweb_varg_from_psll (signed long long *psll)   { return (CWEB_VArg) { CWEB_VARG_TYPE_PSLL, .psll=psll }; }
+CWEB_VArg cweb_varg_from_puc  (unsigned char *puc)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PUC,  .puc=puc   }; }
+CWEB_VArg cweb_varg_from_pus  (unsigned short *pus)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PUS,  .pus=pus   }; }
+CWEB_VArg cweb_varg_from_pui  (unsigned int *pui)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PUI,  .pui=pui   }; }
+CWEB_VArg cweb_varg_from_pul  (unsigned long *pul)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PUL,  .pul=pul   }; }
+CWEB_VArg cweb_varg_from_pull (unsigned long long *pull)   { return (CWEB_VArg) { CWEB_VARG_TYPE_PULL, .pull=pull }; }
 CWEB_VArg cweb_varg_from_pf   (float *pf)         { return (CWEB_VArg) { CWEB_VARG_TYPE_PF,   .pf=pf     }; }
 CWEB_VArg cweb_varg_from_pd   (double *pd)        { return (CWEB_VArg) { CWEB_VARG_TYPE_PD,   .pd=pd     }; }
 CWEB_VArg cweb_varg_from_pb   (bool *pb)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PB,   .pb=pb     }; }
 CWEB_VArg cweb_varg_from_pstr (CWEB_String *pstr) { return (CWEB_VArg) { CWEB_VARG_TYPE_PSTR, .pstr=pstr }; }
 CWEB_VArg cweb_varg_from_phash(CWEB_PasswordHash *phash) { return (CWEB_VArg) { CWEB_VARG_TYPE_PHASH, .phash=phash }; }
+
+/////////////////////////////////////////////////////////////////
+// FILE SYSTEM
+////////////////////////////////////////////////////////////////
+
+typedef struct LoadedFile LoadedFile;
+struct LoadedFile {
+    LoadedFile* next;
+    int         len;
+    char        data[];
+};
+
+static LoadedFile *load_file(CWEB_String path)
+{
+    char buf[1<<10];
+    if (path.len >= (int) sizeof(buf))
+        return NULL;
+    memcpy(buf, path.ptr, path.len);
+    buf[path.len] = '\0';
+
+    FILE *stream = fopen(buf, "rb");
+    if (stream == NULL)
+        return NULL;
+
+    int ret = fseek(stream, 0, SEEK_END);
+    if (ret) {
+        fclose(stream);
+        return NULL;
+    }
+
+    long tmp = ftell(stream);
+    if (tmp < 0 || tmp > INT_MAX) {
+        fclose(stream);
+        return NULL;
+    }
+    int len = (int) tmp;
+
+    ret = fseek(stream, 0, SEEK_SET);
+    if (ret) {
+        fclose(stream);
+        return NULL;
+    }
+
+    LoadedFile *result = malloc(sizeof(LoadedFile) + len + 1);
+    if (result == NULL) {
+        fclose(stream);
+        return NULL;
+    }
+    result->next = NULL;
+    result->len  = len;
+
+    int read_len = fread(result->data, 1, len+1, stream);
+    if (read_len != len || ferror(stream) || !feof(stream)) {
+        fclose(stream);
+        free(result);
+        return NULL;
+    }
+
+    result->data[len] = '\0';
+
+    fclose(stream);
+    return result;
+}
+
+static void free_loaded_files(LoadedFile *loaded_file)
+{
+    while (loaded_file) {
+        LoadedFile *next = loaded_file->next;
+        free(loaded_file);
+        loaded_file = next;
+    }
+}
 
 /////////////////////////////////////////////////////////////////
 // RANDOM
@@ -242,7 +338,7 @@ static int hex_digit_to_int(char c)
 
 static void unpack_token(char *src, int srclen, char *dst, int dstlen)
 {
-    assert(2 * srclen == dstlen);
+    ASSERT(2 * srclen == dstlen);
 
     for (int i = 0; i < srclen; i++) {
         static const char table[] = "0123456789abcdef";
@@ -258,7 +354,7 @@ static int pack_token(char *src, int srclen, char *dst, int dstlen)
     if (srclen & 1)
         return -1;
 
-    assert(srclen == 2 * dstlen);
+    ASSERT(srclen == 2 * dstlen);
 
     for (int i = 0; i < srclen; i += 2) {
         int high = src[i+0];
@@ -381,7 +477,7 @@ static int delete_session(SessionStorage *storage, CWEB_String sess)
     Session *found = lookup_session_slot(storage, sess, false);
     if (found == NULL)
         return false;
-    assert(found->user >= 0);
+    ASSERT(found->user >= 0);
     found->user = -2;
     storage->count--;
     return 0;
@@ -392,7 +488,7 @@ static int find_session(SessionStorage *storage, CWEB_String sess, CWEB_String *
     Session *found = lookup_session_slot(storage, sess, false);
     if (found == NULL)
         return -1;
-    assert(found->user >= 0);
+    ASSERT(found->user >= 0);
     *pcsrf = (CWEB_String) { found->csrf, CSRF_TOKEN_SIZE };
     *puser = found->user;
     return 0;
@@ -401,6 +497,8 @@ static int find_session(SessionStorage *storage, CWEB_String sess, CWEB_String *
 /////////////////////////////////////////////////////////////////
 // DATABASE
 ////////////////////////////////////////////////////////////////
+
+#ifdef CWEB_ENABLE_DATABASE
 
 typedef struct {
     char *str;
@@ -443,11 +541,6 @@ static void sqlite_cache_free(SQLiteCache *cache)
     free(cache);
 }
 
-static sqlite3 *sqlite_cache_getdb(SQLiteCache *cache)
-{
-    return cache->db;
-}
-
 static unsigned long djb2(char *src, int len)
 {
     char *ptr = src;
@@ -460,7 +553,7 @@ static unsigned long djb2(char *src, int len)
     return hash;
 }
 
-static int lookup(SQLiteCache *cache, char *fmt, int fmtlen)
+static int sqlite_cache_lookup(SQLiteCache *cache, char *fmt, int fmtlen)
 {
     int mask = (1 << cache->capacity_log2) - 1;
     int hash = djb2(fmt, fmtlen);
@@ -486,7 +579,7 @@ static int sqlite3utils_prepare(SQLiteCache *cache, sqlite3_stmt **pstmt, char *
     if (fmtlen < 0)
         fmtlen = strlen(fmt);
 
-    int i = lookup(cache, fmt, fmtlen);
+    int i = sqlite_cache_lookup(cache, fmt, fmtlen);
     if (cache->items[i].stmt == NULL) {
 
         sqlite3_stmt *stmt;
@@ -543,6 +636,9 @@ static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
             case CWEB_VARG_TYPE_D  : ret = sqlite3_bind_double(stmt, i+1, arg.d);   break;
             case CWEB_VARG_TYPE_B  : ret = sqlite3_bind_int   (stmt, i+1, arg.b);   break;
             case CWEB_VARG_TYPE_STR: ret = sqlite3_bind_text  (stmt, i+1, arg.str.ptr, arg.str.len, NULL); break;
+            default:
+            // TODO
+            break;
         }
         if (ret != SQLITE_OK) {
             sqlite3_reset(stmt);
@@ -554,8 +650,11 @@ static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
     return SQLITE_OK;
 }
 
-int64_t cweb_database_insert_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args)
+#endif // CWEB_ENABLE_DATABASE
+
+int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args)
 {
+#ifdef CWEB_ENABLE_DATABASE
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
     if (ret != SQLITE_OK)
@@ -575,20 +674,28 @@ int64_t cweb_database_insert_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args)
 
     sqlite3_reset(stmt);
     return insert_id;
+#else
+    return -1;
+#endif
 }
 
-CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, const char *fmt, CWEB_VArgs args)
+CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs args)
 {
+#ifdef CWEB_ENABLE_DATABASE
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
     if (ret != SQLITE_OK)
         return (CWEB_QueryResult) { NULL };
 
     return (CWEB_QueryResult) { stmt };
+#else
+    return (CWEB_QueryResult) { NULL };
+#endif
 }
 
 int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
 {
+#ifdef CWEB_ENABLE_DATABASE
     if (res->handle == NULL)
         return -1;
 
@@ -674,19 +781,30 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
     }
 
     return 1;
+#else
+    (void) res;
+    (void) args;
+    return -1;
+#endif
 }
 
 void cweb_free_query_result(CWEB_QueryResult *res)
 {
+#ifdef CWEB_ENABLE_DATABASE
     if (res->handle) {
         sqlite3_reset(res->handle);
         res->handle = NULL;
     }
+#else
+    (void) res;
+#endif
 }
 
 int cweb_global_init(void)
 {
-    http_global_init();
+    if (http_global_init())
+        return -1;
+    return 0;
 }
 
 void cweb_global_free(void)
@@ -694,7 +812,7 @@ void cweb_global_free(void)
     http_global_free();
 }
 
-CWEB *web_init(CWEB_String addr, uint16_t port)
+CWEB *cweb_init(CWEB_String addr, uint16_t port)
 {
     // If set, allows logins and signups over HTTP, which is highly insecure.
     // This allows compiling the application without TLS when developing.
@@ -705,56 +823,68 @@ CWEB *web_init(CWEB_String addr, uint16_t port)
 
     CWEB *cweb = malloc(sizeof(CWEB));
     if (cweb == NULL)
-        return -1;
+        return NULL;
 
     cweb->pool_cap = 1<<20;
     cweb->pool = malloc(cweb->pool_cap);
     if (cweb->pool == NULL) {
         free(cweb);
-        return -1;
+        return NULL;
     }
 
+#ifdef CWEB_ENABLE_TEMPLATE
     cweb->tpcache = template_cache_init(4);
     if (cweb->tpcache == NULL) {
         free(cweb->pool);
         free(cweb);
-        return -1;
+        return NULL;
     }
+#endif
 
     cweb->session_storage = session_storage_init(1024);
     if (cweb->session_storage == NULL) {
+#ifdef CWEB_ENABLE_TEMPLATE
         template_cache_free(cweb->tpcache);
+#endif
         free(cweb->pool);
         free(cweb);
-        return -1;
+        return NULL;
     }
 
     cweb->server = http_server_init((HTTP_String) { addr.ptr, addr.len }, port);
     if (cweb->server == NULL) {
         session_storage_free(cweb->session_storage);
+#ifdef CWEB_ENABLE_TEMPLATE
         template_cache_free(cweb->tpcache);
+#endif
         free(cweb->pool);
         free(cweb);
-        return -1;
+        return NULL;
     }
 
+#ifdef CWEB_ENABLE_DATABASE
     cweb->db = NULL;
     cweb->dbcache = NULL;
+#endif
 
     cweb->allow_insecure_login = false;
 
-    return 0;
+    return cweb;
 }
 
 void cweb_free(CWEB *cweb)
 {
     http_server_free(cweb->server);
     session_storage_free(cweb->session_storage);
+#ifdef CWEB_ENABLE_TEMPLATE
     template_cache_free(cweb->tpcache);
+#endif
+#ifdef CWEB_ENABLE_DATABASE
     if (cweb->db) {
         sqlite_cache_free(cweb->dbcache);
         sqlite3_close(cweb->db);
     }
+#endif
     free(cweb);
 }
 
@@ -765,6 +895,7 @@ void cweb_version(void)
 
 int cweb_enable_database(CWEB *cweb, CWEB_String file)
 {
+#ifdef CWEB_ENABLE_DATABASE
     if (cweb->db != NULL)
         return -1; // Already enabled
 
@@ -781,23 +912,21 @@ int cweb_enable_database(CWEB *cweb, CWEB_String file)
         return -1;
     }
 
-    char *schema_data;
-    long  schema_size;
-    ret = load_file(file_copy, &schema_data, &schema_size);
-    if (ret < 0) {
+    LoadedFile *schema = load_file(file);
+    if (schema == NULL) {
         sqlite3_close(cweb->db);
         cweb->db = NULL;
         return -1;
     }
 
-    ret = sqlite3_exec(cweb->db, schema_data, NULL, NULL, NULL);
+    ret = sqlite3_exec(cweb->db, schema->data, NULL, NULL, NULL);
     if (ret != SQLITE_OK) {
         sqlite3_close(cweb->db);
         cweb->db = NULL;
         return -1;
     }
 
-    free(schema_data);
+    free_loaded_files(schema);
 
     cweb->dbcache = sqlite_cache_init(cweb->db, 5);
     if (cweb->dbcache == NULL) {
@@ -807,6 +936,9 @@ int cweb_enable_database(CWEB *cweb, CWEB_String file)
     }
 
     return 0;
+#else
+    return -1;
+#endif
 }
 
 CWEB_Request *cweb_wait(CWEB *cweb)
@@ -814,12 +946,15 @@ CWEB_Request *cweb_wait(CWEB *cweb)
     CWEB_Request *req = &cweb->req;
 
     int ret = http_server_wait(cweb->server, &req->req, &req->builder);
-    if (ret < 0) return -1;
+    if (ret) return NULL; // Error or signal
 
+    HTTP_String session_token = http_get_cookie(req->req, HTTP_STR("sess_token"));
+
+    req->cweb = cweb;
     req->arena = (WL_Arena) { cweb->pool, cweb->pool_cap, 0 };
-
     req->just_created_session = false;
-    req->sess = http_get_cookie(req->req, HTTP_STR("sess_token"));
+    req->sess = (CWEB_String) { session_token.ptr, session_token.len };
+
     if (find_session(cweb->session_storage, req->sess, &req->csrf, &req->user_id) < 0) {
         req->user_id = -1;
         req->sess = (CWEB_String) { NULL, 0 };
@@ -871,9 +1006,9 @@ static int set_auth_cookie_if_necessary(CWEB_Request *req)
     return 0;
 }
 
-void cweb_respond(CWEB_Request *req, int status, CWEB_String content)
+void cweb_respond_basic(CWEB_Request *req, int status, CWEB_String content)
 {
-    http_response_builder_status(req->builder, 200);
+    http_response_builder_status(req->builder, status);
     int ret = set_auth_cookie_if_necessary(req);
     if (ret < 0) {
         http_response_builder_undo(req->builder);
@@ -905,6 +1040,11 @@ static void append_to_output_u64(StaticOutputBuffer *out, uint64_t n)
 }
 
 static void append_to_output_s64(StaticOutputBuffer *out, int64_t n)
+{
+    // TODO
+}
+
+static void append_to_output_f64(StaticOutputBuffer *out, double n)
 {
     // TODO
 }
@@ -986,7 +1126,7 @@ static void evaluate_format(StaticOutputBuffer *out, CWEB_String format, CWEB_VA
                 cur++;
 
             if (cur < len) {
-                assert(src[cur] == '}');
+                ASSERT(src[cur] == '}');
                 cur++;
             }
 
@@ -996,7 +1136,7 @@ static void evaluate_format(StaticOutputBuffer *out, CWEB_String format, CWEB_VA
             }
 
         } else {
-            assert(src[cur-1] == '\\');
+            ASSERT(src[cur-1] == '\\');
             if (cur < len) {
                 append_to_output(out, &src[cur], 1);
                 cur++;
@@ -1065,9 +1205,15 @@ int cweb_get_user_id(CWEB_Request *req)
     return req->user_id;
 }
 
+CWEB_String cweb_get_csrf(CWEB_Request *req)
+{
+    return req->csrf;
+}
+
 /////////////////////////////////////////////////////////////////
 // TEMPLATE
 ////////////////////////////////////////////////////////////////
+#ifdef CWEB_ENABLE_TEMPLATE
 
 static TemplateCache *template_cache_init(int capacity_log2)
 {
@@ -1088,22 +1234,10 @@ static void template_cache_free(TemplateCache *cache)
     free(cache);
 }
 
-static unsigned long djb2(WL_String str)
-{
-    char *ptr = str.ptr;
-    char *end = str.ptr + str.len;
-
-    unsigned long hash = 5381;
-    int c;
-    while (ptr < end && (c = *ptr++))
-        hash = ((hash << 5) + hash) + c; // hash * 33 + c
-    return hash;
-}
-
-static int lookup(TemplateCache *cache, WL_String path)
+static int template_cache_lookup(TemplateCache *cache, WL_String path)
 {
     int mask = (1 << cache->capacity_log2) - 1;
-    int hash = djb2(path);
+    int hash = djb2(path.ptr, path.len);
     int i = hash & mask;
     int perturb = hash;
     for (;;) {
@@ -1121,72 +1255,6 @@ static int lookup(TemplateCache *cache, WL_String path)
     return -1;
 }
 
-typedef struct LoadedFile LoadedFile;
-struct LoadedFile {
-    LoadedFile* next;
-    int         len;
-    char        data[];
-};
-
-static LoadedFile *load_file(WL_String path)
-{
-    char buf[1<<10];
-    if (path.len >= (int) sizeof(buf))
-        return NULL;
-    memcpy(buf, path.ptr, path.len);
-    buf[path.len] = '\0';
-
-    FILE *stream = fopen(buf, "rb");
-    if (stream == NULL)
-        return NULL;
-
-    int ret = fseek(stream, 0, SEEK_END);
-    if (ret) {
-        fclose(stream);
-        return NULL;
-    }
-
-    long tmp = ftell(stream);
-    if (tmp < 0 || tmp > INT_MAX) {
-        fclose(stream);
-        return NULL;
-    }
-    int len = (int) tmp;
-
-    ret = fseek(stream, 0, SEEK_SET);
-    if (ret) {
-        fclose(stream);
-        return NULL;
-    }
-
-    LoadedFile *result = malloc(sizeof(LoadedFile) + len + 1);
-    if (result == NULL) {
-        fclose(stream);
-        return NULL;
-    }
-    result->next = NULL;
-    result->len  = len;
-
-    int read_len = fread(result->data, 1, len+1, stream);
-    if (read_len != len || ferror(stream) || !feof(stream)) {
-        fclose(stream);
-        free(result);
-        return NULL;
-    }
-
-    fclose(stream);
-    return result;
-}
-
-static void free_loaded_files(LoadedFile *loaded_file)
-{
-    while (loaded_file) {
-        LoadedFile *next = loaded_file->next;
-        free(loaded_file);
-        loaded_file = next;
-    }
-}
-
 static int compile(WL_String path, WL_Program *program, WL_Arena *arena)
 {
     WL_Compiler *compiler = wl_compiler_init(arena);
@@ -1200,7 +1268,7 @@ static int compile(WL_String path, WL_Program *program, WL_Arena *arena)
 
     for (int i = 0;; i++) {
 
-        LoadedFile *loaded_file = load_file(path);
+        LoadedFile *loaded_file = load_file((CWEB_String) { path.ptr, path.len });
         if (loaded_file == NULL) {
             TRACE("Couldn't load file '%.*s'", path.len, path.ptr);
             free_loaded_files(loaded_file_head);
@@ -1221,7 +1289,7 @@ static int compile(WL_String path, WL_Program *program, WL_Arena *arena)
 
         if (result.type == WL_ADD_LINK) break;
 
-        assert(result.type == WL_ADD_AGAIN);
+        ASSERT(result.type == WL_ADD_AGAIN);
         path = result.path;
     }
 
@@ -1267,7 +1335,7 @@ static int query_routine(WL_Runtime *rt, SQLiteCache *dbcache)
         else if (wl_arg_str(rt, i, &str))
             ret = sqlite3_bind_text(stmt, i, str.ptr, str.len, NULL);
         else {
-            assert(0); // TODO
+            ASSERT(0); // TODO
         }
 
         if (ret != SQLITE_OK) {
@@ -1382,7 +1450,7 @@ static int get_or_create_program(TemplateCache *cache, WL_String path, WL_Arena 
     if (cache == NULL)
         return -1;
 
-    int i = lookup(cache, path);
+    int i = template_cache_lookup(cache, path);
     if (cache->pool[i].pathlen == -1) {
 
         WL_Program program;
@@ -1406,9 +1474,11 @@ static int get_or_create_program(TemplateCache *cache, WL_String path, WL_Arena 
     *program = cache->pool[i].program;
     return 0;
 }
+#endif
 
 void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id)
 {
+#ifdef CWEB_ENABLE_TEMPLATE
     http_response_builder_status(req->builder, status);
     int ret = set_auth_cookie_if_necessary(req);
     if (ret < 0) {
@@ -1419,7 +1489,7 @@ void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_f
     }
 
     WL_Program program;
-    int ret = get_or_create_program(req->cweb->tpcache, template_file, &req->arena, &program);
+    ret = get_or_create_program(req->cweb->tpcache, (WL_String) { template_file.ptr, template_file.len }, &req->arena, &program);
     if (ret < 0) {
         http_response_builder_undo(req->builder);
         http_response_builder_status(req->builder, 500);
@@ -1470,4 +1540,8 @@ void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_f
             break;
         }
     }
+#else
+    http_response_builder_status(req->builder, 500);
+    http_response_builder_done(req->builder);
+#endif
 }
