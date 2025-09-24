@@ -7,13 +7,19 @@ else
 	EXT = .out
 endif
 
-all: cweb.c cweb.h cozisnews$(EXT)
+all: cweb.h cozisnews$(EXT)
 
-cweb.c cweb.h: src/main.c src/main.h
+cweb.h: src/main.c src/main.h
 	python amalg.py
 
-cozisnews$(EXT): demo/main.c cweb.c cweb.h
-	gcc -o $@ demo/main.c cweb.c $(FLAGS)
+cweb.o: cweb.c
+	gcc $< -o $@ -I3p
+
+sqlite3.o: 3p/sqlite3.c
+	gcc -c -o $@ $<
+
+cozisnews$(EXT): demo/main.c sqlite3.o
+	gcc -o $@ demo/main.c sqlite3.o $(FLAGS) -I3p
 
 clean:
 	rm *.o *.out *.exe

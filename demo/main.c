@@ -1,6 +1,7 @@
 #include <stddef.h>
 
-#include "cweb.h"
+#define CWEB_IMPLEMENTATION
+#include "../cweb.h"
 
 #define USERNAME_LIMIT 64
 

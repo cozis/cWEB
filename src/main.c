@@ -11,15 +11,14 @@
 #include <windows.h>
 #endif
 
-#ifndef CWEB_AMALGAMATION
 #ifdef CWEB_ENABLE_DATABASE
 #include "sqlite3.h"
 #endif
 
+#ifndef CWEB_AMALGAMATION
 #ifdef CWEB_ENABLE_TEMPLATE
 #include "wl.h"
 #endif
-
 #include "chttp.h"
 #include "main.h"
 #endif
