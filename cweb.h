@@ -1,8 +1,8 @@
 /*
-Copyright Â© 2025 Francesco Cozzuto
+Copyright © 2025 Francesco Cozzuto
 
 Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the â€œSoftwareâ€),
+copy of this software and associated documentation files (the “Software”),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom the
@@ -11,7 +11,7 @@ Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED â€œAS ISâ€, WITHOUT WARRANTY OF ANY KIND, EXPRESS
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
@@ -14316,13 +14316,6 @@ void cweb_global_free(void)
 
 CWEB *cweb_init(CWEB_String addr, uint16_t port)
 {
-    // If set, allows logins and signups over HTTP, which is highly insecure.
-    // This allows compiling the application without TLS when developing.
-    bool allow_insecure_login = true;
-
-    if (allow_insecure_login)
-        printf("WARNING: allow_insecure_login is true\n");
-
     CWEB *cweb = malloc(sizeof(CWEB));
     if (cweb == NULL)
         return NULL;
@@ -14370,7 +14363,12 @@ CWEB *cweb_init(CWEB_String addr, uint16_t port)
     cweb->trace_sql = false;
 #endif
 
-    cweb->allow_insecure_login = false;
+    // If set, allows logins and signups over HTTP, which is highly insecure.
+    // This allows compiling the application without TLS when developing.
+    cweb->allow_insecure_login = true;
+
+    if (cweb->allow_insecure_login)
+        printf("WARNING: allow_insecure_login is true\n");
 
     return cweb;
 }
@@ -14622,8 +14620,7 @@ int cweb_set_user_id(CWEB_Request *req, int user_id)
         if (user_id == -1) ret = delete_session(req->cweb->session_storage, req->sess);
         else               ret = create_session(req->cweb->session_storage, user_id, &req->sess, &req->csrf);
 
-        if (ret < 0)
-            return -1;
+        if (ret < 0) return -1;
 
         req->just_created_session = true;
     }

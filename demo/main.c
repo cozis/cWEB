@@ -331,6 +331,8 @@ int main(void)
 {
     CWEB_String addr = CWEB_STR("127.0.0.1");
     uint16_t    port = 8080;
+    CWEB_String database_file = CWEB_STR(":memory:");
+    CWEB_String schema_file = CWEB_STR("demo/schema.sql");
 
     if (cweb_global_init() < 0)
         return -1;
@@ -341,7 +343,7 @@ int main(void)
         return -1;
     }
 
-    if (cweb_enable_database(cweb, CWEB_STR(":memory:"), CWEB_STR("demo/schema.sql")) < 0) {
+    if (cweb_enable_database(cweb, database_file, schema_file) < 0) {
         cweb_free(cweb);
         cweb_global_free();
         return -1;

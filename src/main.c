@@ -928,13 +928,6 @@ void cweb_global_free(void)
 
 CWEB *cweb_init(CWEB_String addr, uint16_t port)
 {
-    // If set, allows logins and signups over HTTP, which is highly insecure.
-    // This allows compiling the application without TLS when developing.
-    bool allow_insecure_login = true;
-
-    if (allow_insecure_login)
-        printf("WARNING: allow_insecure_login is true\n");
-
     CWEB *cweb = malloc(sizeof(CWEB));
     if (cweb == NULL)
         return NULL;
@@ -982,7 +975,12 @@ CWEB *cweb_init(CWEB_String addr, uint16_t port)
     cweb->trace_sql = false;
 #endif
 
-    cweb->allow_insecure_login = false;
+    // If set, allows logins and signups over HTTP, which is highly insecure.
+    // This allows compiling the application without TLS when developing.
+    cweb->allow_insecure_login = true;
+
+    if (cweb->allow_insecure_login)
+        printf("WARNING: allow_insecure_login is true\n");
 
     return cweb;
 }
@@ -1234,8 +1232,7 @@ int cweb_set_user_id(CWEB_Request *req, int user_id)
         if (user_id == -1) ret = delete_session(req->cweb->session_storage, req->sess);
         else               ret = create_session(req->cweb->session_storage, user_id, &req->sess, &req->csrf);
 
-        if (ret < 0)
-            return -1;
+        if (ret < 0) return -1;
 
         req->just_created_session = true;
     }

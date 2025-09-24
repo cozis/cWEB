@@ -1,7 +1,7 @@
 include "page.wl"
 
-let posts = $query("SELECT U.username, P.title, P.content FROM Posts as P, Users as U WHERE P.id=? AND U.id=P.author", $post_id)
-let comments = $query("SELECT C.id, U.username, C.content, C.parent_post, C.parent_comment FROM Comments as C, Users as U WHERE C.parent_post=? AND U.id=C.author", $post_id)
+let posts = $query("SELECT U.username, P.title, P.content FROM Posts as P, Users as U WHERE P.id=? AND U.id=P.author", $resource_id)
+let comments = $query("SELECT C.id, U.username, C.content, C.parent_post, C.parent_comment FROM Comments as C, Users as U WHERE C.parent_post=? AND U.id=C.author", $resource_id)
 
 let lookup = {}
 
@@ -193,7 +193,7 @@ let main =
                 </summary>
                 <div class="add-comment">
                     <form action="/api/comment" method="POST">
-                        <input type="hidden" name="parent_post" value=\'"'\$post_id\'"' />
+                        <input type="hidden" name="parent_post" value=\'"'\$resource_id\'"' />
                         <textarea name="content" placeholder="Add a comment..."></textarea>
                         <input type="submit" vaue="Publish" />
                     </form>
@@ -221,7 +221,7 @@ let main =
                             </summary>
                             <div class="add-comment">
                                 <form action="/api/comment" method="POST">
-                                    <input type="hidden" name="parent_post"    value=\'"'\$post_id\'"' />
+                                    <input type="hidden" name="parent_post"    value=\'"'\$resource_id\'"' />
                                     <input type="hidden" name="parent_comment" value=\'"'\comment.id\'"' />
                                     <textarea name="content" placeholder="Add a comment..."></textarea>
                                     <input type="submit" vaue="Publish" />
