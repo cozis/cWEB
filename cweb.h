@@ -7,6 +7,7 @@
 // src/main.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
+#line 1 "src/main.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -231,7 +232,12 @@ void cweb_global_free(void);
 CWEB *cweb_init(CWEB_String addr, uint16_t port);
 void  cweb_free(CWEB *cweb);
 
-int cweb_enable_database(CWEB *cweb, CWEB_String file);
+// Open an SQLite instance in file "database_file" and run the DDL script at "schema_file".
+// Note that "database_file" may be ":memory:". 
+int cweb_enable_database(CWEB *cweb, CWEB_String database_file, CWEB_String schema_file);
+
+// Log all evaluated SQL statements to stdout
+void cweb_trace_sql(CWEB *cweb, bool enable);
 
 // Pause execution until a request is available.
 // TODO: When does this function return NULL?
@@ -302,8 +308,8 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args);
 void cweb_free_query_result(CWEB_QueryResult *res);
 
 // Calculates the bcrypt hash of the specified password
-int cweb_hash_password(char *pass, int passlen, int cost, CWEB_PasswordHash *hash);
+int cweb_hash_password(CWEB_String pass, int cost, CWEB_PasswordHash *hash);
 
 // Checks whether the password matches the given hash
-int cweb_check_password(char *pass, int passlen, CWEB_PasswordHash hash);
+int cweb_check_password(CWEB_String pass, CWEB_PasswordHash hash);
 #endif // CWEB_AMALGAMATION

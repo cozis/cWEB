@@ -1,4 +1,4 @@
-include "pages/page.wl"
+include "page.wl"
 
 let style = 
     <style>

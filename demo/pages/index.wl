@@ -1,4 +1,4 @@
-include "pages/page.wl"
+include "page.wl"
 
 let posts = $query("SELECT P.id, P.title, P.is_link, P.content, (SELECT COUNT(*) FROM Comments as C WHERE c.parent_post=P.id) as num_comments, CURRENT_TIMESTAMP as date FROM Posts as P")
 

@@ -1,67 +1,6 @@
+#include <stddef.h>
+
 #include "cweb.h"
-
-#if 0
-#define WL_STR(X) ((WL_String) { (X), (int) sizeof(X)-1})
-
-#define HTML_STR(X) html_str(HTTP_STR(#X))
-
-static CWEB_String html_str(CWEB_String str)
-{
-    str = cweb_trim(str);
-    if (str.len > 0 && str.ptr[0] == '(') {
-        str.ptr++;
-        str.len--;
-    }
-    if (str.len > 0 && str.ptr[str.len-1] == ')')
-        str.len--;
-    return str;
-}
-
-int load_file(char *file, char **data, long *size)
-{
-    FILE *f = fopen(file, "rb");
-    if (f == NULL) return -1;
-
-    fseek(f, 0, SEEK_END);
-    *size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    *data = malloc(*size + 1);
-
-    fread(*data, 1, *size, f);
-    (*data)[*size] = '\0';
-
-    fclose(f);
-    return 0;
-}
-
-static void *alloc(WL_Arena *arena, int num, int align)
-{
-    int pad = -(uintptr_t) (arena->ptr + arena->cur) & (align-1);
-    if (arena->len - arena->cur < num + pad)
-        return NULL;
-
-    void *ptr = arena->ptr + arena->cur + pad;
-    arena->cur += num + pad;
-
-    return ptr;
-}
-
-static bool is_hex_digit(char c)
-{
-    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
-}
-
-static int hex_digit_to_int(char c)
-{
-    if (c >= 'A' && c <= 'F')
-        return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-    return c - '0';
-}
-#endif
-
 
 #define USERNAME_LIMIT 64
 
@@ -125,14 +64,14 @@ static int user_exists(CWEB *cweb, CWEB_String name, CWEB_String pass)
         return 0;
     }
 
-    ret = cweb_check_password(pass.ptr, pass.len, hash);
+    ret = cweb_check_password(pass, hash);
     if (ret < 0) {
         cweb_free_query_result(&res);
-        return -500;
+        return -1;
     }
     if (ret > 0) {
         cweb_free_query_result(&res);
-        return -400;
+        return 0;
     }
 
     return user_id;
@@ -148,17 +87,22 @@ static void endpoint_api_login(CWEB *cweb, CWEB_Request *req)
     CWEB_String name = cweb_get_param_s(req, CWEB_STR("username"));
     CWEB_String pass = cweb_get_param_s(req, CWEB_STR("password"));
     if (!valid_name(name) || !valid_pass(pass)) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid credentials</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("Invalid credentials"));
         return;
     }
 
     int ret = user_exists(cweb, name, pass);
     if (ret < 0) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid credentials</div>"));
+        cweb_respond_basic(req, 500, CWEB_STR("Internal error"));
+        return;
+    }
+    if (ret == 0) {
+        cweb_respond_basic(req, 400, CWEB_STR("Invalid credentials"));
         return;
     }
     if (cweb_set_user_id(req, ret) < 0) {
-        // TODO
+        cweb_respond_basic(req, 500, CWEB_STR("Internal error"));
+        return;
     }
 
     cweb_respond_redirect(req, CWEB_STR("/index"));
@@ -177,29 +121,32 @@ static void endpoint_api_signup(CWEB *cweb, CWEB_Request *req)
     CWEB_String pass2 = cweb_get_param_s(req, CWEB_STR("password2"));
 
     if (!valid_name(name) || !valid_email(email) || !valid_pass(pass1)) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid credentials</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("Invalid credentials"));
         return;
     }
 
     if (!cweb_streq(pass1, pass2)) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">The password was repeated incorrectly</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("The password was repeated incorrectly"));
         return;
     }
 
     CWEB_PasswordHash hash;
-    int ret = cweb_hash_password(pass1.ptr, pass1.len, 12, &hash);
+    int ret = cweb_hash_password(pass1, 12, &hash);
     if (ret) {
-        cweb_respond_basic(req, 400, CWEB_STR("<div class=\"error\">Internal error</div>"));
+        cweb_respond_basic(req, 500, CWEB_STR("Internal error"));
         return;
     }
 
     int64_t insert_id = cweb_database_insert(cweb, "INSERT INTO Users(username, email, hash) VALUES (?, ?, ?)", name, email, hash);
     if (insert_id < 0) {
         // TODO: What if the user exists?
-        cweb_respond_basic(req, 400, CWEB_STR("<div class=\"error\">Internal error</div>"));
+        cweb_respond_basic(req, 500, CWEB_STR("Internal error"));
         return;
     }
-    cweb_set_user_id(req, insert_id);
+    if (cweb_set_user_id(req, insert_id) < 0) {
+        cweb_respond_basic(req, 500, CWEB_STR("Internal error"));
+        return;
+    }
 
     cweb_respond_redirect(req, CWEB_STR("/index"));
 }
@@ -229,19 +176,16 @@ static void endpoint_api_post(CWEB *cweb, CWEB_Request *req)
         cweb_respond_basic(req, 400, CWEB_STR("Invalid request"));
         return;
     }
-
     if (!valid_post_title(title)) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid title</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("Invalid title"));
         return;
     }
-
     if (!valid_link(link)) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid link</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("Invalid link"));
         return;
     }
-
     if (!valid_post_content(content)) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid content</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("Invalid content"));
         return;
     }
 
@@ -256,19 +200,20 @@ static void endpoint_api_post(CWEB *cweb, CWEB_Request *req)
         user_id, title, is_link, content);
 
     if (insert_id < 0) {
-        cweb_respond_basic(req, 500, CWEB_STR("<div class=\"error\">Internal error</div>"));
+        cweb_respond_basic(req, 500, CWEB_STR("Internal error"));
         return;
     }
     int post_id = (int) insert_id;
 
-    cweb_respond_redirect(req, cweb_format(req, "/post?id={}", post_id));
+    CWEB_String target = cweb_format(req, "/post?id={}", post_id);
+    cweb_respond_redirect(req, target);
 }
 
 static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
 {
     int user_id = cweb_get_user_id(req);
     if (user_id == -1) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">You are not logged in</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("You are not logged in"));
         return;
     }
 
@@ -278,13 +223,13 @@ static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
     CWEB_String csrf2   = cweb_get_param_s(req, CWEB_STR("csrf"));
 
     if (!cweb_streq(cweb_get_csrf(req), csrf2)) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid request</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("Invalid request"));
         return;
     }
 
     content = cweb_trim(content);
     if (!valid_comment_content(content)) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Invalid content</div>"));
+        cweb_respond_basic(req, 400, CWEB_STR("Invalid content"));
         return;
     }
 
@@ -292,18 +237,19 @@ static void endpoint_api_comment(CWEB *cweb, CWEB_Request *req)
     if (parent_comment == -1) insert_id = cweb_database_insert(cweb, "INSERT INTO Comments(author, content, parent_post) VALUES (?, ?, ?)",                    user_id, content, parent_post);
     else                      insert_id = cweb_database_insert(cweb, "INSERT INTO Comments(author, content, parent_post, parent_comment) VALUES (?, ?, ?, ?)", user_id, content, parent_post, parent_comment);
     if (insert_id < 0) {
-        cweb_respond_basic(req, 200, CWEB_STR("<div class=\"error\">Internal error</div>"));
+        cweb_respond_basic(req, 500, CWEB_STR("Internal error"));
         return;
     }
 
-    cweb_respond_redirect(req, cweb_format(req, "/post?id={}", parent_post));
+    CWEB_String target = cweb_format(req, "/post?id={}", parent_post);
+    cweb_respond_redirect(req, target);
 }
 
 static void endpoint_index(CWEB *cweb, CWEB_Request *req)
 {
     (void) cweb;
 
-    cweb_respond_template(req, 200, CWEB_STR("pages/index.wl"), -1);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/index.wl"), -1);
 }
 
 static void endpoint_write(CWEB *cweb, CWEB_Request *req)
@@ -315,7 +261,7 @@ static void endpoint_write(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    cweb_respond_template(req, 200, CWEB_STR("pages/write.wl"), -1);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/write.wl"), -1);
 }
 
 static void endpoint_login(CWEB *cweb, CWEB_Request *req)
@@ -327,7 +273,7 @@ static void endpoint_login(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    cweb_respond_template(req, 200, CWEB_STR("pages/login.wl"), -1);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/login.wl"), -1);
 }
 
 static void endpoint_signup(CWEB *cweb, CWEB_Request *req)
@@ -339,14 +285,14 @@ static void endpoint_signup(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    cweb_respond_template(req, 200, CWEB_STR("pages/signup.wl"), -1);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/signup.wl"), -1);
 }
 
 static void endpoint_post(CWEB *cweb, CWEB_Request *req)
 {
     int post_id = cweb_get_param_i(req, CWEB_STR("id"));
     if (post_id < 0) {
-        cweb_respond_template(req, 404, CWEB_STR("pages/notfound.wl"), -1);
+        cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"), -1);
         return;
     }
 
@@ -366,18 +312,18 @@ static void endpoint_post(CWEB *cweb, CWEB_Request *req)
     }
 
     if (num == 0) {
-        cweb_respond_template(req, 404, CWEB_STR("pages/notfound.wl"), -1);
+        cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"), -1);
         return;
     }
 
-    cweb_respond_template(req, 200, CWEB_STR("pages/post.wl"), post_id);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/post.wl"), post_id);
 }
 
 static void endpoint_fallback(CWEB *cweb, CWEB_Request *req)
 {
     (void) cweb;
 
-    cweb_respond_template(req, 404, CWEB_STR("pages/notfound.wl"), -1);
+    cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"), -1);
 }
 
 int main(void)
@@ -393,6 +339,14 @@ int main(void)
         cweb_global_free();
         return -1;
     }
+
+    if (cweb_enable_database(cweb, CWEB_STR(":memory:"), CWEB_STR("demo/schema.sql")) < 0) {
+        cweb_free(cweb);
+        cweb_global_free();
+        return -1;
+    }
+
+    cweb_trace_sql(cweb, true);
 
     for (;;) {
         CWEB_Request *req = cweb_wait(cweb);

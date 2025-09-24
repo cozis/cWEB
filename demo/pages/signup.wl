@@ -1,5 +1,5 @@
-include "pages/page.wl"
-include "pages/login_and_signup_style.wl"
+include "page.wl"
+include "login_and_signup_style.wl"
 
 let main =
     <main>
@@ -7,7 +7,7 @@ let main =
 
         <div id="response"></div>
 
-        <form hx-post="/api/signup" hx-target="#response">
+        <form action="/api/signup" method="POST">
             <input type="text"     name="username"  placeholder="username"        />
             <input type="email"    name="email"     placeholder="email"           />
             <input type="password" name="password1" placeholder="password"        />

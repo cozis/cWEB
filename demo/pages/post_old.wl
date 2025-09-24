@@ -1,4 +1,4 @@
-include "pages/page.wl"
+include "page.wl"
 
 let posts = $query("SELECT title, content FROM Posts WHERE id=?", $post_id)
 let comments = $query("SELECT C.id, U.username, C.content, C.parent_post, C.parent_comment FROM Comments as C, Users as U WHERE C.parent_post=? AND U.id == C.author", $post_id)

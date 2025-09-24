@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <limits.h>
+#include <stdlib.h>
 
 #ifdef __linux__
 #include <errno.h>
@@ -9,6 +11,7 @@
 #include <windows.h>
 #endif
 
+#ifndef CWEB_AMALGAMATION
 #ifdef CWEB_ENABLE_DATABASE
 #include "sqlite3.h"
 #endif
@@ -18,7 +21,8 @@
 #endif
 
 #include "chttp.h"
-#include "cweb.h"
+#include "main.h"
+#endif
 
 #define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
@@ -93,6 +97,7 @@ struct CWEB {
 #ifdef CWEB_ENABLE_DATABASE
     sqlite3 *db;
     SQLiteCache *dbcache;
+    bool trace_sql;
 #endif
 
 #ifdef CWEB_ENABLE_TEMPLATE
@@ -157,6 +162,87 @@ CWEB_VArg cweb_varg_from_pd   (double *pd)        { return (CWEB_VArg) { CWEB_VA
 CWEB_VArg cweb_varg_from_pb   (bool *pb)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PB,   .pb=pb     }; }
 CWEB_VArg cweb_varg_from_pstr (CWEB_String *pstr) { return (CWEB_VArg) { CWEB_VARG_TYPE_PSTR, .pstr=pstr }; }
 CWEB_VArg cweb_varg_from_phash(CWEB_PasswordHash *phash) { return (CWEB_VArg) { CWEB_VARG_TYPE_PHASH, .phash=phash }; }
+
+
+typedef struct {
+    char *dst;
+    int   cap;
+    int   len;
+} StaticOutputBuffer;
+
+static void append_to_output(StaticOutputBuffer *out, char *src, int len)
+{
+    int unused = out->cap - out->len;
+    if (unused > 0)
+        memcpy(out->dst + out->len, src, MIN(len, unused));
+    out->len += len;
+}
+
+static void append_to_output_u64(StaticOutputBuffer *out, uint64_t n)
+{
+    // TODO
+}
+
+static void append_to_output_s64(StaticOutputBuffer *out, int64_t n)
+{
+    // TODO
+}
+
+static void append_to_output_f64(StaticOutputBuffer *out, double n)
+{
+    // TODO
+}
+
+static void append_to_output_ptr(StaticOutputBuffer *out, void *p)
+{
+    // TODO
+}
+
+static void value_to_output(StaticOutputBuffer *out, CWEB_VArg arg)
+{
+    switch (arg.type) {
+        case CWEB_VARG_TYPE_C    : append_to_output(out, &arg.c, 1);     break;
+        case CWEB_VARG_TYPE_S    : append_to_output_s64(out, arg.s);     break;
+        case CWEB_VARG_TYPE_I    : append_to_output_s64(out, arg.i);     break;
+        case CWEB_VARG_TYPE_L    : append_to_output_s64(out, arg.l);     break;
+        case CWEB_VARG_TYPE_LL   : append_to_output_s64(out, arg.ll);    break;
+        case CWEB_VARG_TYPE_SC   : append_to_output_s64(out, arg.sc);    break;
+        case CWEB_VARG_TYPE_SS   : append_to_output_s64(out, arg.ss);    break;
+        case CWEB_VARG_TYPE_SI   : append_to_output_s64(out, arg.si);    break;
+        case CWEB_VARG_TYPE_SL   : append_to_output_s64(out, arg.sl);    break;
+        case CWEB_VARG_TYPE_SLL  : append_to_output_s64(out, arg.sll);   break;
+        case CWEB_VARG_TYPE_UC   : append_to_output_u64(out, arg.uc);    break;
+        case CWEB_VARG_TYPE_US   : append_to_output_u64(out, arg.us);    break;
+        case CWEB_VARG_TYPE_UI   : append_to_output_u64(out, arg.ui);    break;
+        case CWEB_VARG_TYPE_UL   : append_to_output_u64(out, arg.ul);    break;
+        case CWEB_VARG_TYPE_ULL  : append_to_output_u64(out, arg.ull);   break;
+        case CWEB_VARG_TYPE_F    : append_to_output_f64(out, arg.f);     break;
+        case CWEB_VARG_TYPE_D    : append_to_output_u64(out, arg.d);     break;
+        case CWEB_VARG_TYPE_B    : append_to_output(out, arg.b ? "true" : "false", arg.b ? 4: 5);break;
+        case CWEB_VARG_TYPE_STR  : append_to_output(out, arg.str.ptr, arg.str.len); break;
+        case CWEB_VARG_TYPE_HASH : append_to_output(out, arg.hash.data, strlen(arg.hash.data)); break;
+        case CWEB_VARG_TYPE_PC   : append_to_output_ptr(out, arg.pc);    break;
+        case CWEB_VARG_TYPE_PS   : append_to_output_ptr(out, arg.ps);    break;
+        case CWEB_VARG_TYPE_PI   : append_to_output_ptr(out, arg.pi);    break;
+        case CWEB_VARG_TYPE_PL   : append_to_output_ptr(out, arg.pl);    break;
+        case CWEB_VARG_TYPE_PLL  : append_to_output_ptr(out, arg.pll);   break;
+        case CWEB_VARG_TYPE_PSC  : append_to_output_ptr(out, arg.psc);   break;
+        case CWEB_VARG_TYPE_PSS  : append_to_output_ptr(out, arg.pss);   break;
+        case CWEB_VARG_TYPE_PSI  : append_to_output_ptr(out, arg.psi);   break;
+        case CWEB_VARG_TYPE_PSL  : append_to_output_ptr(out, arg.psl);   break;
+        case CWEB_VARG_TYPE_PSLL : append_to_output_ptr(out, arg.psll);  break;
+        case CWEB_VARG_TYPE_PUC  : append_to_output_ptr(out, arg.puc);   break;
+        case CWEB_VARG_TYPE_PUS  : append_to_output_ptr(out, arg.pus);   break;
+        case CWEB_VARG_TYPE_PUI  : append_to_output_ptr(out, arg.pui);   break;
+        case CWEB_VARG_TYPE_PUL  : append_to_output_ptr(out, arg.pul);   break;
+        case CWEB_VARG_TYPE_PULL : append_to_output_ptr(out, arg.pull);  break;
+        case CWEB_VARG_TYPE_PF   : append_to_output_ptr(out, arg.pf);    break;
+        case CWEB_VARG_TYPE_PD   : append_to_output_ptr(out, arg.pd);    break;
+        case CWEB_VARG_TYPE_PB   : append_to_output_ptr(out, arg.pb);    break;
+        case CWEB_VARG_TYPE_PSTR : append_to_output_ptr(out, arg.pstr);  break;
+        case CWEB_VARG_TYPE_PHASH: append_to_output_ptr(out, arg.phash); break;
+    }
+}
 
 /////////////////////////////////////////////////////////////////
 // FILE SYSTEM
@@ -260,13 +346,13 @@ static int generate_random_bytes(char *dst, int cap)
 // PASSWORD
 ////////////////////////////////////////////////////////////////
 
-int cweb_hash_password(char *pass, int passlen, int cost, CWEB_PasswordHash *hash)
+int cweb_hash_password(CWEB_String pass, int cost, CWEB_PasswordHash *hash)
 {
     char passzt[128];
-    if (passlen >= (int) sizeof(passzt))
+    if (pass.len >= (int) sizeof(passzt))
         return -1;
-    memcpy(passzt, pass, passlen);
-    passzt[passlen] = '\0';
+    memcpy(passzt, pass.ptr, pass.len);
+    passzt[pass.len] = '\0';
 
     char random[16];
     int ret = generate_random_bytes(random, (int) sizeof(random));
@@ -282,13 +368,13 @@ int cweb_hash_password(char *pass, int passlen, int cost, CWEB_PasswordHash *has
     return 0;
 }
 
-int cweb_check_password(char *pass, int passlen, CWEB_PasswordHash hash)
+int cweb_check_password(CWEB_String pass, CWEB_PasswordHash hash)
 {
     char passzt[128];
-    if (passlen >= (int) sizeof(passzt))
+    if (pass.len >= (int) sizeof(passzt))
         return -1;
-    memcpy(passzt, pass, passlen);
-    passzt[passlen] = '\0';
+    memcpy(passzt, pass.ptr, pass.len);
+    passzt[pass.len] = '\0';
 
     CWEB_PasswordHash new_hash;
     if (_crypt_blowfish_rn(passzt, hash.data, new_hash.data, sizeof(new_hash.data)) == NULL)
@@ -322,6 +408,8 @@ struct SessionStorage {
     Session items[];
 };
 
+#ifndef CWEB_AMALGAMATION
+
 static bool is_hex_digit(char c)
 {
     return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
@@ -335,6 +423,8 @@ static int hex_digit_to_int(char c)
         return c - 'a' + 10;
     return c - '0';
 }
+
+#endif
 
 static void unpack_token(char *src, int srclen, char *dst, int dstlen)
 {
@@ -585,7 +675,7 @@ static int sqlite3utils_prepare(SQLiteCache *cache, sqlite3_stmt **pstmt, char *
         sqlite3_stmt *stmt;
         int ret = sqlite3_prepare_v2(cache->db, fmt, -1, &stmt, NULL);
         if (ret != SQLITE_OK) {
-            //fprintf(stderr, "Failed to prepare statement: %s (%s:%d)\n", sqlite3_errmsg(db), __FILE__, __LINE__);
+            fprintf(stderr, "Failed to prepare statement: %s (%s:%d)\n", sqlite3_errmsg(cache->db), __FILE__, __LINE__); // TODO
             return ret;
         }
 
@@ -617,30 +707,32 @@ static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
     for (int i = 0; i < args.len; i++) {
         CWEB_VArg arg = args.ptr[i];
         switch (arg.type) {
-            case CWEB_VARG_TYPE_C  : ret = sqlite3_bind_text  (stmt, i+1, &arg.c, 1, NULL); break;
-            case CWEB_VARG_TYPE_S  : ret = sqlite3_bind_int   (stmt, i+1, arg.s);   break;
-            case CWEB_VARG_TYPE_I  : ret = sqlite3_bind_int   (stmt, i+1, arg.i);   break;
-            case CWEB_VARG_TYPE_L  : ret = sqlite3_bind_int64 (stmt, i+1, arg.l);   break;
-            case CWEB_VARG_TYPE_LL : ret = sqlite3_bind_int64 (stmt, i+1, arg.ll);  break;
-            case CWEB_VARG_TYPE_SC : ret = sqlite3_bind_int   (stmt, i+1, arg.sc);  break;
-            case CWEB_VARG_TYPE_SS : ret = sqlite3_bind_int   (stmt, i+1, arg.ss);  break;
-            case CWEB_VARG_TYPE_SI : ret = sqlite3_bind_int   (stmt, i+1, arg.si);  break;
-            case CWEB_VARG_TYPE_SL : ret = sqlite3_bind_int64 (stmt, i+1, arg.sl);  break;
-            case CWEB_VARG_TYPE_SLL: ret = sqlite3_bind_int   (stmt, i+1, arg.sll); break;
-            case CWEB_VARG_TYPE_UC : ret = sqlite3_bind_int   (stmt, i+1, arg.uc);  break;
-            case CWEB_VARG_TYPE_US : ret = sqlite3_bind_int   (stmt, i+1, arg.us);  break;
-            case CWEB_VARG_TYPE_UI : ret = sqlite3_bind_int64 (stmt, i+1, arg.ui);  break;
-            case CWEB_VARG_TYPE_UL : ret = sqlite3_bind_int64 (stmt, i+1, arg.ul);  break;
-            case CWEB_VARG_TYPE_ULL: ret = sqlite3_bind_int64 (stmt, i+1, arg.ull); break;
-            case CWEB_VARG_TYPE_F  : ret = sqlite3_bind_double(stmt, i+1, arg.f);   break;
-            case CWEB_VARG_TYPE_D  : ret = sqlite3_bind_double(stmt, i+1, arg.d);   break;
-            case CWEB_VARG_TYPE_B  : ret = sqlite3_bind_int   (stmt, i+1, arg.b);   break;
-            case CWEB_VARG_TYPE_STR: ret = sqlite3_bind_text  (stmt, i+1, arg.str.ptr, arg.str.len, NULL); break;
+            case CWEB_VARG_TYPE_C   : ret = sqlite3_bind_text  (stmt, i+1, &arg.c, 1, NULL); break;
+            case CWEB_VARG_TYPE_S   : ret = sqlite3_bind_int   (stmt, i+1, arg.s);   break;
+            case CWEB_VARG_TYPE_I   : ret = sqlite3_bind_int   (stmt, i+1, arg.i);   break;
+            case CWEB_VARG_TYPE_L   : ret = sqlite3_bind_int64 (stmt, i+1, arg.l);   break;
+            case CWEB_VARG_TYPE_LL  : ret = sqlite3_bind_int64 (stmt, i+1, arg.ll);  break;
+            case CWEB_VARG_TYPE_SC  : ret = sqlite3_bind_int   (stmt, i+1, arg.sc);  break;
+            case CWEB_VARG_TYPE_SS  : ret = sqlite3_bind_int   (stmt, i+1, arg.ss);  break;
+            case CWEB_VARG_TYPE_SI  : ret = sqlite3_bind_int   (stmt, i+1, arg.si);  break;
+            case CWEB_VARG_TYPE_SL  : ret = sqlite3_bind_int64 (stmt, i+1, arg.sl);  break;
+            case CWEB_VARG_TYPE_SLL : ret = sqlite3_bind_int   (stmt, i+1, arg.sll); break;
+            case CWEB_VARG_TYPE_UC  : ret = sqlite3_bind_int   (stmt, i+1, arg.uc);  break;
+            case CWEB_VARG_TYPE_US  : ret = sqlite3_bind_int   (stmt, i+1, arg.us);  break;
+            case CWEB_VARG_TYPE_UI  : ret = sqlite3_bind_int64 (stmt, i+1, arg.ui);  break;
+            case CWEB_VARG_TYPE_UL  : ret = sqlite3_bind_int64 (stmt, i+1, arg.ul);  break;
+            case CWEB_VARG_TYPE_ULL : ret = sqlite3_bind_int64 (stmt, i+1, arg.ull); break;
+            case CWEB_VARG_TYPE_F   : ret = sqlite3_bind_double(stmt, i+1, arg.f);   break;
+            case CWEB_VARG_TYPE_D   : ret = sqlite3_bind_double(stmt, i+1, arg.d);   break;
+            case CWEB_VARG_TYPE_B   : ret = sqlite3_bind_int   (stmt, i+1, arg.b);   break;
+            case CWEB_VARG_TYPE_STR : ret = sqlite3_bind_text  (stmt, i+1, arg.str.ptr, arg.str.len, NULL); break;
+            case CWEB_VARG_TYPE_HASH: ret = sqlite3_bind_text  (stmt, i+1, arg.hash.data, -1, NULL); break;
             default:
-            // TODO
+            ASSERT(0);  // TODO
             break;
         }
         if (ret != SQLITE_OK) {
+            fprintf(stderr, "Failed to bind paremeter: %s (%s:%d)\n", sqlite3_errmsg(cache->db), __FILE__, __LINE__); // TODO
             sqlite3_reset(stmt);
             return ret;
         }
@@ -652,9 +744,29 @@ static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
 
 #endif // CWEB_ENABLE_DATABASE
 
+static void dump_sql(char *fmt, CWEB_VArgs args)
+{
+    printf("SQL :: %s", fmt);
+    if (args.len > 0) {
+        printf(" (");
+        for (int i = 0; i < args.len; i++) {
+            char mem[128];
+            StaticOutputBuffer buf = { mem, sizeof(mem), 0 };
+            value_to_output(&buf, args.ptr[i]);
+            printf("%.*s", buf.len, buf.dst);
+            if (i+1 < args.len)
+                printf(", ");
+        }
+        printf(")");
+    }
+    printf("\n");
+}
+
 int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args)
 {
 #ifdef CWEB_ENABLE_DATABASE
+    if (cweb->trace_sql) dump_sql(fmt, args);
+
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
     if (ret != SQLITE_OK)
@@ -668,6 +780,7 @@ int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args)
 
     int64_t insert_id = sqlite3_last_insert_rowid(cweb->db);
     if (insert_id < 0) {
+        fprintf(stderr, "Insert ID is invalid: %s (%s:%d)\n", sqlite3_errmsg(cweb->db), __FILE__, __LINE__); // TODO
         sqlite3_reset(stmt);
         return -1;
     }
@@ -682,6 +795,8 @@ int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args)
 CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs args)
 {
 #ifdef CWEB_ENABLE_DATABASE
+    if (cweb->trace_sql) dump_sql(fmt, args);
+
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
     if (ret != SQLITE_OK)
@@ -865,6 +980,7 @@ CWEB *cweb_init(CWEB_String addr, uint16_t port)
 #ifdef CWEB_ENABLE_DATABASE
     cweb->db = NULL;
     cweb->dbcache = NULL;
+    cweb->trace_sql = false;
 #endif
 
     cweb->allow_insecure_login = false;
@@ -893,17 +1009,24 @@ void cweb_version(void)
     printf("%s\n", sqlite3_libversion());
 }
 
-int cweb_enable_database(CWEB *cweb, CWEB_String file)
+void cweb_trace_sql(CWEB *cweb, bool enable)
+{
+#ifdef CWEB_ENABLE_DATABASE
+    cweb->trace_sql = enable;
+#endif
+}
+
+int cweb_enable_database(CWEB *cweb, CWEB_String database_file, CWEB_String schema_file)
 {
 #ifdef CWEB_ENABLE_DATABASE
     if (cweb->db != NULL)
         return -1; // Already enabled
 
     char file_copy[1<<12];
-    if (file.len >= SIZEOF(file_copy))
+    if (database_file.len >= SIZEOF(file_copy))
         return -1;
-    memcpy(file_copy, file.ptr, file.len);
-    file_copy[file.len] = '\0';
+    memcpy(file_copy, database_file.ptr, database_file.len);
+    file_copy[database_file.len] = '\0';
 
     int ret = sqlite3_open(file_copy, &cweb->db);
     if (ret != SQLITE_OK) {
@@ -912,7 +1035,7 @@ int cweb_enable_database(CWEB *cweb, CWEB_String file)
         return -1;
     }
 
-    LoadedFile *schema = load_file(file);
+    LoadedFile *schema = load_file(schema_file);
     if (schema == NULL) {
         sqlite3_close(cweb->db);
         cweb->db = NULL;
@@ -921,6 +1044,7 @@ int cweb_enable_database(CWEB *cweb, CWEB_String file)
 
     ret = sqlite3_exec(cweb->db, schema->data, NULL, NULL, NULL);
     if (ret != SQLITE_OK) {
+        free_loaded_files(schema);
         sqlite3_close(cweb->db);
         cweb->db = NULL;
         return -1;
@@ -998,7 +1122,7 @@ static int set_auth_cookie_if_necessary(CWEB_Request *req)
 {
     if (req->just_created_session) {
         char cookie[1<<9];
-        int cookie_len = snprintf(cookie, sizeof(cookie), "Set-Cookie: sess_token=%.*s; Path=/; HttpOnly; Secure", req->sess.len, req->sess.ptr);
+        int cookie_len = snprintf(cookie, sizeof(cookie), "Set-Cookie: sess_token=%.*s; Path=/; HttpOnly%s", req->sess.len, req->sess.ptr, req->cweb->allow_insecure_login ? "" : "; Secure");
         if (cookie_len < 0 || cookie_len >= (int) sizeof(cookie))
             return -500;
         http_response_builder_header(req->builder, (HTTP_String) { cookie, cookie_len });
@@ -1018,86 +1142,6 @@ void cweb_respond_basic(CWEB_Request *req, int status, CWEB_String content)
     }
     http_response_builder_body(req->builder, (HTTP_String) { content.ptr, content.len });
     http_response_builder_done(req->builder);
-}
-
-typedef struct {
-    char *dst;
-    int   cap;
-    int   len;
-} StaticOutputBuffer;
-
-static void append_to_output(StaticOutputBuffer *out, char *src, int len)
-{
-    int unused = out->cap - out->len;
-    if (unused > 0)
-        memcpy(out->dst + out->len, src, MIN(len, unused));
-    out->len += len;
-}
-
-static void append_to_output_u64(StaticOutputBuffer *out, uint64_t n)
-{
-    // TODO
-}
-
-static void append_to_output_s64(StaticOutputBuffer *out, int64_t n)
-{
-    // TODO
-}
-
-static void append_to_output_f64(StaticOutputBuffer *out, double n)
-{
-    // TODO
-}
-
-static void append_to_output_ptr(StaticOutputBuffer *out, void *p)
-{
-    // TODO
-}
-
-static void value_to_output(StaticOutputBuffer *out, CWEB_VArg arg)
-{
-    switch (arg.type) {
-        case CWEB_VARG_TYPE_C    : append_to_output(out, &arg.c, 1);     break;
-        case CWEB_VARG_TYPE_S    : append_to_output_s64(out, arg.s);     break;
-        case CWEB_VARG_TYPE_I    : append_to_output_s64(out, arg.i);     break;
-        case CWEB_VARG_TYPE_L    : append_to_output_s64(out, arg.l);     break;
-        case CWEB_VARG_TYPE_LL   : append_to_output_s64(out, arg.ll);    break;
-        case CWEB_VARG_TYPE_SC   : append_to_output_s64(out, arg.sc);    break;
-        case CWEB_VARG_TYPE_SS   : append_to_output_s64(out, arg.ss);    break;
-        case CWEB_VARG_TYPE_SI   : append_to_output_s64(out, arg.si);    break;
-        case CWEB_VARG_TYPE_SL   : append_to_output_s64(out, arg.sl);    break;
-        case CWEB_VARG_TYPE_SLL  : append_to_output_s64(out, arg.sll);   break;
-        case CWEB_VARG_TYPE_UC   : append_to_output_u64(out, arg.uc);    break;
-        case CWEB_VARG_TYPE_US   : append_to_output_u64(out, arg.us);    break;
-        case CWEB_VARG_TYPE_UI   : append_to_output_u64(out, arg.ui);    break;
-        case CWEB_VARG_TYPE_UL   : append_to_output_u64(out, arg.ul);    break;
-        case CWEB_VARG_TYPE_ULL  : append_to_output_u64(out, arg.ull);   break;
-        case CWEB_VARG_TYPE_F    : append_to_output_f64(out, arg.f);     break;
-        case CWEB_VARG_TYPE_D    : append_to_output_u64(out, arg.d);     break;
-        case CWEB_VARG_TYPE_B    : append_to_output(out, arg.b ? "true" : "false", arg.b ? 4: 5);break;
-        case CWEB_VARG_TYPE_STR  : append_to_output(out, arg.str.ptr, arg.str.len); break;
-        case CWEB_VARG_TYPE_HASH : append_to_output(out, arg.hash.data, strlen(arg.hash.data)); break;
-        case CWEB_VARG_TYPE_PC   : append_to_output_ptr(out, arg.pc);    break;
-        case CWEB_VARG_TYPE_PS   : append_to_output_ptr(out, arg.ps);    break;
-        case CWEB_VARG_TYPE_PI   : append_to_output_ptr(out, arg.pi);    break;
-        case CWEB_VARG_TYPE_PL   : append_to_output_ptr(out, arg.pl);    break;
-        case CWEB_VARG_TYPE_PLL  : append_to_output_ptr(out, arg.pll);   break;
-        case CWEB_VARG_TYPE_PSC  : append_to_output_ptr(out, arg.psc);   break;
-        case CWEB_VARG_TYPE_PSS  : append_to_output_ptr(out, arg.pss);   break;
-        case CWEB_VARG_TYPE_PSI  : append_to_output_ptr(out, arg.psi);   break;
-        case CWEB_VARG_TYPE_PSL  : append_to_output_ptr(out, arg.psl);   break;
-        case CWEB_VARG_TYPE_PSLL : append_to_output_ptr(out, arg.psll);  break;
-        case CWEB_VARG_TYPE_PUC  : append_to_output_ptr(out, arg.puc);   break;
-        case CWEB_VARG_TYPE_PUS  : append_to_output_ptr(out, arg.pus);   break;
-        case CWEB_VARG_TYPE_PUI  : append_to_output_ptr(out, arg.pui);   break;
-        case CWEB_VARG_TYPE_PUL  : append_to_output_ptr(out, arg.pul);   break;
-        case CWEB_VARG_TYPE_PULL : append_to_output_ptr(out, arg.pull);  break;
-        case CWEB_VARG_TYPE_PF   : append_to_output_ptr(out, arg.pf);    break;
-        case CWEB_VARG_TYPE_PD   : append_to_output_ptr(out, arg.pd);    break;
-        case CWEB_VARG_TYPE_PB   : append_to_output_ptr(out, arg.pb);    break;
-        case CWEB_VARG_TYPE_PSTR : append_to_output_ptr(out, arg.pstr);  break;
-        case CWEB_VARG_TYPE_PHASH: append_to_output_ptr(out, arg.phash); break;
-    }
 }
 
 static void evaluate_format(StaticOutputBuffer *out, CWEB_String format, CWEB_VArgs args)
@@ -1279,7 +1323,7 @@ static int compile(WL_String path, WL_Program *program, WL_Arena *arena)
         loaded_file_tail = &loaded_file->next;
 
         WL_String content = { loaded_file->data, loaded_file->len };
-        WL_AddResult result = wl_compiler_add(compiler, content);
+        WL_AddResult result = wl_compiler_add(compiler, path, content);
 
         if (result.type == WL_ADD_ERROR) {
             TRACE("Compilation failed (%s)", wl_compiler_error(compiler).ptr);
@@ -1307,6 +1351,11 @@ static int compile(WL_String path, WL_Program *program, WL_Arena *arena)
 
 static int query_routine(WL_Runtime *rt, SQLiteCache *dbcache)
 {
+    if (dbcache == NULL) {
+        wl_push_none(rt); // Allow not pushing anything on the WL machine
+        return -1;
+    }
+
     int num_args = wl_arg_count(rt);
     if (num_args == 0)
         return 0;
