@@ -927,7 +927,8 @@ void cweb_global_free(void)
     http_global_free();
 }
 
-CWEB *cweb_init(CWEB_String addr, uint16_t port)
+CWEB *cweb_init(CWEB_String addr, uint16_t port, uint16_t secure_port,
+    CWEB_String cert_key, CWEB_String private_key)
 {
     CWEB *cweb = malloc(sizeof(CWEB));
     if (cweb == NULL)
@@ -960,7 +961,7 @@ CWEB *cweb_init(CWEB_String addr, uint16_t port)
         return NULL;
     }
 
-    cweb->server = http_server_init((HTTP_String) { addr.ptr, addr.len }, port);
+    cweb->server = http_server_init_ex((HTTP_String) { addr.ptr, addr.len }, port, secure_port, (HTTP_String) { cert_key.ptr, cert_key.len }, (HTTP_String) { private_key.ptr, private_key.len });
     if (cweb->server == NULL) {
         session_storage_free(cweb->session_storage);
 #ifdef CWEB_ENABLE_TEMPLATE
@@ -1001,6 +1002,27 @@ void cweb_free(CWEB *cweb)
     }
 #endif
     free(cweb);
+}
+
+int cweb_add_website(CWEB *cweb, CWEB_String domain, CWEB_String cert_file, CWEB_String key_file)
+{
+    return http_server_add_website(cweb->server,
+        (HTTP_String) { domain.ptr,    domain.len },
+        (HTTP_String) { cert_file.ptr, cert_file.len },
+        (HTTP_String) { key_file.ptr,  key_file.len }
+    );
+}
+
+int cweb_create_test_certificate(CWEB_String C, CWEB_String O,
+    CWEB_String CN, CWEB_String cert_file, CWEB_String key_file)
+{
+    return http_create_test_certificate(
+        (HTTP_String) { C.ptr, C.len },
+        (HTTP_String) { O.ptr, O.len },
+        (HTTP_String) { CN.ptr, CN.len },
+        (HTTP_String) { cert_file.ptr, cert_file.len },
+        (HTTP_String) { key_file.ptr, key_file.len }
+    );
 }
 
 void cweb_version(void)
@@ -1090,6 +1112,14 @@ CWEB_Request *cweb_wait(CWEB *cweb)
     }
 
     return req;
+}
+
+bool cweb_match_domain(CWEB_Request *req, CWEB_String str)
+{
+    int idx = http_find_header(req->req->headers, req->req->num_headers, HTTP_STR("host"));
+    if (idx < 0) return false;
+
+    return http_streq((HTTP_String) { str.ptr, str.len }, req->req->headers[idx].value);
 }
 
 bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str)

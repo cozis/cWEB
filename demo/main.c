@@ -250,7 +250,7 @@ static void endpoint_index(CWEB *cweb, CWEB_Request *req)
 {
     (void) cweb;
 
-    cweb_respond_template(req, 200, CWEB_STR("demo/pages/index.wl"), -1);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/index.wl"));
 }
 
 static void endpoint_write(CWEB *cweb, CWEB_Request *req)
@@ -262,7 +262,7 @@ static void endpoint_write(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    cweb_respond_template(req, 200, CWEB_STR("demo/pages/write.wl"), -1);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/write.wl"));
 }
 
 static void endpoint_login(CWEB *cweb, CWEB_Request *req)
@@ -274,7 +274,7 @@ static void endpoint_login(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    cweb_respond_template(req, 200, CWEB_STR("demo/pages/login.wl"), -1);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/login.wl"));
 }
 
 static void endpoint_signup(CWEB *cweb, CWEB_Request *req)
@@ -286,14 +286,14 @@ static void endpoint_signup(CWEB *cweb, CWEB_Request *req)
         return;
     }
 
-    cweb_respond_template(req, 200, CWEB_STR("demo/pages/signup.wl"), -1);
+    cweb_respond_template(req, 200, CWEB_STR("demo/pages/signup.wl"));
 }
 
 static void endpoint_post(CWEB *cweb, CWEB_Request *req)
 {
     int post_id = cweb_get_param_i(req, CWEB_STR("id"));
     if (post_id < 0) {
-        cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"), -1);
+        cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"));
         return;
     }
 
@@ -313,7 +313,7 @@ static void endpoint_post(CWEB *cweb, CWEB_Request *req)
     }
 
     if (num == 0) {
-        cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"), -1);
+        cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"));
         return;
     }
 
@@ -324,20 +324,40 @@ static void endpoint_fallback(CWEB *cweb, CWEB_Request *req)
 {
     (void) cweb;
 
-    cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"), -1);
+    cweb_respond_template(req, 404, CWEB_STR("demo/pages/notfound.wl"));
 }
 
 int main(void)
 {
-    CWEB_String addr = CWEB_STR("127.0.0.1");
-    uint16_t    port = 8080;
-    CWEB_String database_file = CWEB_STR(":memory:");
-    CWEB_String schema_file = CWEB_STR("demo/schema.sql");
+    CWEB_String addr          = CWEB_STR("127.0.0.1");
+    uint16_t    port          = 8080;
+    CWEB_String database_file = CWEB_STR("demo.db");
+    CWEB_String schema_file   = CWEB_STR("demo/schema.sql");
 
     if (cweb_global_init() < 0)
         return -1;
 
-    CWEB *cweb = cweb_init(addr, port);
+    uint16_t    secure_port = 0;
+    CWEB_String cert_key;
+    CWEB_String private_key;
+#ifdef HTTPS_ENABLED
+    secure_port = 8443;
+    cert_key    = CWEB_STR("test_cert_file.pem");
+    private_key = CWEB_STR("test_private_key.pem");
+    int ret = cweb_create_test_certificate(
+        CWEB_STR("C"),
+        CWEB_STR("O"),
+        CWEB_STR("CN"),
+        cert_key,
+        private_key
+    );
+    if (ret < 0) {
+        // TODO
+        return -1;
+    }
+#endif
+
+    CWEB *cweb = cweb_init(addr, port, secure_port, cert_key, private_key);
     if (cweb == NULL) {
         cweb_global_free();
         return -1;
@@ -353,7 +373,10 @@ int main(void)
     cweb_enable_template_cache(cweb, false);
 
     for (;;) {
+
         CWEB_Request *req = cweb_wait(cweb);
+        if (req == NULL) break;
+
         if (0) {}
         else if (cweb_match_endpoint(req, CWEB_STR("/api/login")))   endpoint_api_login(cweb, req);
         else if (cweb_match_endpoint(req, CWEB_STR("/api/signup")))  endpoint_api_signup(cweb, req);

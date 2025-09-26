@@ -219,8 +219,19 @@ typedef struct CWEB_Request CWEB_Request;
 int  cweb_global_init(void);
 void cweb_global_free(void);
 
-CWEB *cweb_init(CWEB_String addr, uint16_t port);
-void  cweb_free(CWEB *cweb);
+// TODO: comment
+CWEB *cweb_init(CWEB_String addr, uint16_t port, uint16_t secure_port,
+    CWEB_String cert_key, CWEB_String private_key);
+
+// TODO: comment
+void cweb_free(CWEB *cweb);
+
+// TODO: comment
+int cweb_add_website(CWEB *cweb, CWEB_String domain, CWEB_String cert_file, CWEB_String key_file);
+
+// TODO: comment
+int cweb_create_test_certificate(CWEB_String C, CWEB_String O,
+    CWEB_String CN, CWEB_String cert_file, CWEB_String key_file);
 
 // Open an SQLite instance in file "database_file" and run the DDL script at "schema_file".
 // Note that "database_file" may be ":memory:". 
@@ -235,6 +246,8 @@ void cweb_enable_template_cache(CWEB *cweb, bool enable);
 // Pause execution until a request is available.
 // TODO: When does this function return NULL?
 CWEB_Request *cweb_wait(CWEB *cweb);
+
+bool cweb_match_domain(CWEB_Request *req, CWEB_String str);
 
 // Returns true iff the request matches the specified endpoint
 bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str);

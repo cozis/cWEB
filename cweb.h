@@ -248,8 +248,15 @@ typedef struct CWEB_Request CWEB_Request;
 int  cweb_global_init(void);
 void cweb_global_free(void);
 
-CWEB *cweb_init(CWEB_String addr, uint16_t port);
-void  cweb_free(CWEB *cweb);
+CWEB *cweb_init(CWEB_String addr, uint16_t port, uint16_t secure_port,
+    CWEB_String cert_key, CWEB_String private_key);
+
+void cweb_free(CWEB *cweb);
+
+int cweb_add_website(CWEB *cweb, CWEB_String domain, CWEB_String cert_file, CWEB_String key_file);
+
+int cweb_create_test_certificate(CWEB_String C, CWEB_String O,
+    CWEB_String CN, CWEB_String cert_file, CWEB_String key_file);
 
 // Open an SQLite instance in file "database_file" and run the DDL script at "schema_file".
 // Note that "database_file" may be ":memory:". 
@@ -5797,12 +5804,12 @@ int http_server_wait(HTTP_Server *server, HTTP_Request **req, HTTP_ResponseBuild
             case SOCKET_EVENT_DIED:
             {
                 Connection *conn = event.user_data;
-                HTTP_ASSERT(conn);
-
-                http_engine_free(&conn->engine);
-                conn->used = false;
-                conn->gen++;
-                server->num_conns--;
+                if (conn) {
+                    http_engine_free(&conn->engine);
+                    conn->used = false;
+                    conn->gen++;
+                    server->num_conns--;
+                }
             }
             break;
 
@@ -14326,7 +14333,8 @@ void cweb_global_free(void)
     http_global_free();
 }
 
-CWEB *cweb_init(CWEB_String addr, uint16_t port)
+CWEB *cweb_init(CWEB_String addr, uint16_t port, uint16_t secure_port,
+    CWEB_String cert_key, CWEB_String private_key)
 {
     CWEB *cweb = malloc(sizeof(CWEB));
     if (cweb == NULL)
@@ -14359,7 +14367,7 @@ CWEB *cweb_init(CWEB_String addr, uint16_t port)
         return NULL;
     }
 
-    cweb->server = http_server_init((HTTP_String) { addr.ptr, addr.len }, port);
+    cweb->server = http_server_init_ex((HTTP_String) { addr.ptr, addr.len }, port, secure_port, (HTTP_String) { cert_key.ptr, cert_key.len }, (HTTP_String) { private_key.ptr, private_key.len });
     if (cweb->server == NULL) {
         session_storage_free(cweb->session_storage);
 #ifdef CWEB_ENABLE_TEMPLATE
@@ -14400,6 +14408,27 @@ void cweb_free(CWEB *cweb)
     }
 #endif
     free(cweb);
+}
+
+int cweb_add_website(CWEB *cweb, CWEB_String domain, CWEB_String cert_file, CWEB_String key_file)
+{
+    return http_server_add_website(cweb->server,
+        (HTTP_String) { domain.ptr,    domain.len },
+        (HTTP_String) { cert_file.ptr, cert_file.len },
+        (HTTP_String) { key_file.ptr,  key_file.len }
+    );
+}
+
+int cweb_create_test_certificate(CWEB_String C, CWEB_String O,
+    CWEB_String CN, CWEB_String cert_file, CWEB_String key_file)
+{
+    return http_create_test_certificate(
+        (HTTP_String) { C.ptr, C.len },
+        (HTTP_String) { O.ptr, O.len },
+        (HTTP_String) { CN.ptr, CN.len },
+        (HTTP_String) { cert_file.ptr, cert_file.len },
+        (HTTP_String) { key_file.ptr, key_file.len }
+    );
 }
 
 void cweb_version(void)
