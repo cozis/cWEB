@@ -101,6 +101,7 @@ struct CWEB {
 
 #ifdef CWEB_ENABLE_TEMPLATE
     TemplateCache *tpcache;
+    bool enable_template_cache;
 #endif
 
     bool allow_insecure_login;
@@ -672,7 +673,7 @@ static int sqlite3utils_prepare(SQLiteCache *cache, sqlite3_stmt **pstmt, char *
     if (cache->items[i].stmt == NULL) {
 
         sqlite3_stmt *stmt;
-        int ret = sqlite3_prepare_v2(cache->db, fmt, -1, &stmt, NULL);
+        int ret = sqlite3_prepare_v2(cache->db, fmt, fmtlen, &stmt, NULL);
         if (ret != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s (%s:%d)\n", sqlite3_errmsg(cache->db), __FILE__, __LINE__); // TODO
             return ret;
@@ -946,6 +947,7 @@ CWEB *cweb_init(CWEB_String addr, uint16_t port)
         free(cweb);
         return NULL;
     }
+    cweb->enable_template_cache = true;
 #endif
 
     cweb->session_storage = session_storage_init(1024);
@@ -1011,6 +1013,11 @@ void cweb_trace_sql(CWEB *cweb, bool enable)
 #ifdef CWEB_ENABLE_DATABASE
     cweb->trace_sql = enable;
 #endif
+}
+
+void cweb_enable_template_cache(CWEB *cweb, bool enable)
+{
+    cweb->enable_template_cache = enable;
 }
 
 int cweb_enable_database(CWEB *cweb, CWEB_String database_file, CWEB_String schema_file)
@@ -1088,6 +1095,12 @@ CWEB_Request *cweb_wait(CWEB *cweb)
 bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str)
 {
     return http_streq(req->req->url.path, (HTTP_String) { str.ptr, str.len });
+}
+
+CWEB_String cweb_get_path(CWEB_Request *req)
+{
+    HTTP_String path = req->req->url.path;
+    return (CWEB_String) { path.ptr, path.len };
 }
 
 CWEB_String cweb_get_param_s(CWEB_Request *req, CWEB_String name)
@@ -1455,47 +1468,18 @@ static int query_routine(WL_Runtime *rt, SQLiteCache *dbcache)
     return 0;
 }
 
-static void push_sysvar(WL_Runtime *rt, WL_String name, SQLiteCache *dbcache, CWEB_String csrf, int user_id, int resource_id)
-{
-    (void) dbcache;
-
-    if (wl_streq(name, "login_user_id", -1)) {
-
-        if (user_id < 0)
-            wl_push_none(rt);
-        else
-            wl_push_s64(rt, user_id);
-
-    } else if (wl_streq(name, "resource_id", -1)) {
-
-        if (resource_id < 0)
-            wl_push_none(rt);
-        else
-            wl_push_s64(rt, resource_id);
-
-    } else if (wl_streq(name, "csrf", -1)) {
-
-        if (csrf.len == 0)
-            wl_push_none(rt);
-        else
-            wl_push_str(rt, (WL_String) { csrf.ptr, csrf.len });
-    }
-}
-
-static void push_syscall(WL_Runtime *rt, WL_String name, SQLiteCache *dbcache)
-{
-    if (wl_streq(name, "query", -1)) {
-        query_routine(rt, dbcache);
-        return;
-    }
-}
-
-static int get_or_create_program(TemplateCache *cache, WL_String path, WL_Arena *arena, WL_Program *program)
+static int get_or_create_program(TemplateCache *cache, WL_String path, bool force_create, WL_Arena *arena, WL_Program *program)
 {
     if (cache == NULL)
         return -1;
 
     int i = template_cache_lookup(cache, path);
+
+    if (cache->pool[i].pathlen != -1 && force_create) {
+        cache->pool[i].pathlen = -1;
+        free(cache->pool[i].program.ptr);
+    }
+
     if (cache->pool[i].pathlen == -1) {
 
         WL_Program program;
@@ -1521,7 +1505,7 @@ static int get_or_create_program(TemplateCache *cache, WL_String path, WL_Arena 
 }
 #endif
 
-void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id)
+void cweb_respond_template_impl(CWEB_Request *req, int status, CWEB_String template_file, CWEB_VArgs args)
 {
 #ifdef CWEB_ENABLE_TEMPLATE
     http_response_builder_status(req->builder, status);
@@ -1534,7 +1518,7 @@ void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_f
     }
 
     WL_Program program;
-    ret = get_or_create_program(req->cweb->tpcache, (WL_String) { template_file.ptr, template_file.len }, &req->arena, &program);
+    ret = get_or_create_program(req->cweb->tpcache, (WL_String) { template_file.ptr, template_file.len }, !req->cweb->enable_template_cache, &req->arena, &program);
     if (ret < 0) {
         http_response_builder_undo(req->builder);
         http_response_builder_status(req->builder, 500);
@@ -1570,11 +1554,65 @@ void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_f
             return;
 
             case WL_EVAL_SYSVAR:
-            push_sysvar(rt, result.str, req->cweb->dbcache, req->csrf, req->user_id, resource_id);
+            if (wl_streq(result.str, "login_user_id", -1)) {
+
+                if (req->user_id < 0)
+                    wl_push_none(rt);
+                else
+                    wl_push_s64(rt, req->user_id);
+
+            } else if (wl_streq(result.str, "csrf", -1)) {
+
+                if (req->csrf.len == 0)
+                    wl_push_none(rt);
+                else
+                    wl_push_str(rt, (WL_String) { req->csrf.ptr, req->csrf.len });
+            }
             break;
 
             case WL_EVAL_SYSCALL:
-            push_syscall(rt, result.str, req->cweb->dbcache);
+            if (wl_streq(result.str, "query", -1)) {
+                query_routine(rt, req->cweb->dbcache);
+                break;
+            }
+            if (wl_streq(result.str, "args", -1)) {
+
+                if (wl_arg_count(rt) != 1) {
+                    // TODO
+                    break;
+                }
+
+                int64_t idx;
+                if (!wl_arg_s64(rt, 0, &idx)) {
+                    // TODO
+                    break;
+                }
+
+                if (idx < 0 || idx >= args.len) {
+                    // TODO
+                    break;
+                }
+
+                CWEB_VArg arg = args.ptr[idx];
+                switch (arg.type) {
+                    case CWEB_VARG_TYPE_C  : wl_push_s64(rt, arg.c);   break;
+                    case CWEB_VARG_TYPE_S  : wl_push_s64(rt, arg.s);   break;
+                    case CWEB_VARG_TYPE_I  : wl_push_s64(rt, arg.i);   break;
+                    case CWEB_VARG_TYPE_L  : wl_push_s64(rt, arg.l);   break;
+                    case CWEB_VARG_TYPE_LL : wl_push_s64(rt, arg.ll);  break;
+                    case CWEB_VARG_TYPE_SC : wl_push_s64(rt, arg.sc);  break;
+                    case CWEB_VARG_TYPE_SS : wl_push_s64(rt, arg.ss);  break;
+                    case CWEB_VARG_TYPE_SI : wl_push_s64(rt, arg.si);  break;
+                    case CWEB_VARG_TYPE_SL : wl_push_s64(rt, arg.sl);  break;
+                    case CWEB_VARG_TYPE_SLL: wl_push_s64(rt, arg.sll); break;
+                    case CWEB_VARG_TYPE_F  : wl_push_f64(rt, arg.f);   break;
+                    case CWEB_VARG_TYPE_D  : wl_push_s64(rt, arg.d);   break;
+                    case CWEB_VARG_TYPE_B  : if (arg.b) wl_push_true(rt); else wl_push_false(rt); break;
+                    case CWEB_VARG_TYPE_STR: wl_push_str(rt, (WL_String) { arg.str.ptr, arg.str.len }); break;
+                    default:break;
+                }
+                break;
+            }
             break;
 
             case WL_EVAL_OUTPUT:

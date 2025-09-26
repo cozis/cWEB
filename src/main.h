@@ -4,7 +4,7 @@
 #define CWEB_ENABLE_DATABASE
 #define CWEB_ENABLE_TEMPLATE
 
-#define CWEB_STR(X) (CWEB_String) { (X), (int) sizeof(X)-1 }
+#define CWEB_STR(X) ((CWEB_String) { (X), (int) sizeof(X)-1 })
 
 typedef struct {
     char *ptr;
@@ -229,6 +229,9 @@ int cweb_enable_database(CWEB *cweb, CWEB_String database_file, CWEB_String sche
 // Log all evaluated SQL statements to stdout
 void cweb_trace_sql(CWEB *cweb, bool enable);
 
+// TODO: comment
+void cweb_enable_template_cache(CWEB *cweb, bool enable);
+
 // Pause execution until a request is available.
 // TODO: When does this function return NULL?
 CWEB_Request *cweb_wait(CWEB *cweb);
@@ -245,6 +248,9 @@ int cweb_get_user_id(CWEB_Request *req);
 // Sets the user ID for the current session (it must be a positive integer).
 // If the ID is -1, the session is deleted.
 int cweb_set_user_id(CWEB_Request *req, int user_id);
+
+// TODO: comment
+CWEB_String cweb_get_path(CWEB_Request *req);
 
 // Returns the request parameter with the specified name
 // If the request uses POST, the parameter is taken from the body,
@@ -270,13 +276,18 @@ void cweb_respond_basic(CWEB_Request *req, int status, CWEB_String content);
 void cweb_respond_redirect(CWEB_Request *req, CWEB_String target);
 
 // Responds to the request by evaluating a WL template file
-void cweb_respond_template(CWEB_Request *req, int status, CWEB_String template_file, int resource_id);
+void cweb_respond_template_impl(CWEB_Request *req, int status, CWEB_String template_file, CWEB_VArgs args);
+
+// Helper
+#define cweb_respond_template(req, status, template_file, ...) \
+    cweb_respond_template_impl((req), (status), (template_file), CWEB_VARGS(__VA_ARGS__))
 
 // Evaluates an SQL INSERT statement and returns the ID of the last inserted row. On error -1 is returned
 int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args);
 
 // Helper
-#define cweb_database_insert(cweb, fmt, ...) cweb_database_insert_impl((cweb), (fmt), CWEB_VARGS(__VA_ARGS__))
+#define cweb_database_insert(cweb, fmt, ...) \
+    cweb_database_insert_impl((cweb), (fmt), CWEB_VARGS(__VA_ARGS__))
 
 // Iterator over database rows
 typedef struct { void *handle; } CWEB_QueryResult;
