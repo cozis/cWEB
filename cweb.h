@@ -1,8 +1,8 @@
 /*
-Copyright � 2025 Francesco Cozzuto
+Copyright © 2025 Francesco Cozzuto
 
 Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the �Software�),
+copy of this software and associated documentation files (the “Software”),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom the
@@ -11,7 +11,7 @@ Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED �AS IS�, WITHOUT WARRANTY OF ANY KIND, EXPRESS
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
@@ -26,7 +26,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 // src/main.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/main.h"
+#line 1 "src/main.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -358,7 +358,7 @@ int cweb_check_password(CWEB_String pass, CWEB_PasswordHash hash);
 // 3p/chttp.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "3p/chttp.h"
+#line 1 "3p/chttp.h"
 #ifndef HTTP_AMALGAMATION
 #define HTTP_AMALGAMATION
 
@@ -368,7 +368,7 @@ int cweb_check_password(CWEB_String pass, CWEB_PasswordHash hash);
 // src/basic.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/basic.h"
+#line 1 "src/basic.h"
 #ifndef CHTTP_BASIC_INCLUDED
 #define CHTTP_BASIC_INCLUDED
 
@@ -455,7 +455,7 @@ void print_bytes(HTTP_String prefix, HTTP_String src);
 // src/parse.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/parse.h"
+#line 1 "src/parse.h"
 #ifndef PARSE_INCLUDED
 #define PARSE_INCLUDED
 
@@ -561,7 +561,7 @@ int         http_get_param_i    (HTTP_String body, HTTP_String str);
 // src/engine.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/engine.h"
+#line 1 "src/engine.h"
 #ifndef HTTP_ENGINE_INCLUDED
 #define HTTP_ENGINE_INCLUDED
 
@@ -689,7 +689,7 @@ void             http_engine_undo    (HTTP_Engine *eng);
 // src/cert.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/cert.h"
+#line 1 "src/cert.h"
 #ifndef CERT_INCLUDED
 #define CERT_INCLUDED
 
@@ -720,7 +720,7 @@ int http_create_test_certificate(HTTP_String C, HTTP_String O, HTTP_String CN,
 // src/client.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/client.h"
+#line 1 "src/client.h"
 #ifndef CLIENT_INCLUDED
 #define CLIENT_INCLUDED
 
@@ -824,7 +824,7 @@ HTTP_Response *http_post(HTTP_String url,
 // src/server.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/server.h"
+#line 1 "src/server.h"
 #ifndef HTTP_SERVER_INCLUDED
 #define HTTP_SERVER_INCLUDED
 
@@ -865,7 +865,7 @@ void         http_response_builder_done    (HTTP_ResponseBuilder res);
 // src/router.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/router.h"
+#line 1 "src/router.h"
 #ifndef HTTP_ROUTER_INCLUDED
 #define HTTP_ROUTER_INCLUDED
 
@@ -890,7 +890,7 @@ int          http_serve          (char *addr, int port, HTTP_Router *router);
 // 3p/chttp.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "3p/chttp.c"
+#line 1 "3p/chttp.c"
 #ifndef HTTP_NOINCLUDE
 #include "chttp.h"
 #endif
@@ -899,7 +899,7 @@ int          http_serve          (char *addr, int port, HTTP_Router *router);
 // src/sec.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/sec.h"
+#line 1 "src/sec.h"
 #ifndef SEC_INCLUDED
 #define SEC_INCLUDED
 
@@ -960,7 +960,7 @@ void secure_context_free(SecureContext *sec);
 // src/socket_raw.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/socket_raw.h"
+#line 1 "src/socket_raw.h"
 #ifndef SOCKET_RAW_INCLUDED
 #define SOCKET_RAW_INCLUDED
 
@@ -1001,7 +1001,7 @@ RAW_SOCKET listen_socket(HTTP_String addr, uint16_t port, bool reuse_addr, int b
 // src/socket.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/socket.h"
+#line 1 "src/socket.h"
 #ifndef SOCKET_INCLUDED
 #define SOCKET_INCLUDED
 
@@ -1082,7 +1082,7 @@ void* socket_get_user_data(Socket *sock);
 // src/socket_pool.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/socket_pool.h"
+#line 1 "src/socket_pool.h"
 #ifndef SOCKET_POOL_INCLUDED
 #define SOCKET_POOL_INCLUDED
 
@@ -1148,7 +1148,7 @@ bool socket_pool_secure(SocketPool *pool, SocketHandle handle);
 // src/basic.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/basic.c"
+#line 1 "src/basic.c"
 #include <stddef.h>
 #include <string.h>
 
@@ -1257,7 +1257,7 @@ void print_bytes(HTTP_String prefix, HTTP_String src)
 // src/parse.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/parse.c"
+#line 1 "src/parse.c"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -2564,7 +2564,7 @@ int http_get_param_i(HTTP_String body, HTTP_String str)
 // src/engine.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/engine.c"
+#line 1 "src/engine.c"
 #include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -3558,7 +3558,7 @@ void http_engine_undo(HTTP_Engine *eng)
 // src/cert.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/cert.c"
+#line 1 "src/cert.c"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -3733,7 +3733,7 @@ int http_create_test_certificate(HTTP_String C, HTTP_String O, HTTP_String CN,
 // src/sec.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/sec.c"
+#line 1 "src/sec.c"
 #ifndef HTTP_AMALGAMATION
 #include "sec.h"
 #endif
@@ -3959,7 +3959,7 @@ int secure_context_add_cert(SecureContext *sec,
 // src/socket_raw.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/socket_raw.c"
+#line 1 "src/socket_raw.c"
 #include <string.h>
 
 #ifdef _WIN32
@@ -4071,7 +4071,7 @@ RAW_SOCKET listen_socket(HTTP_String addr, uint16_t port, bool reuse_addr, int b
 // src/socket.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/socket.c"
+#line 1 "src/socket.c"
 #include <stdio.h> // snprintf
 #include <assert.h>
 #include <string.h>
@@ -4867,7 +4867,7 @@ void *socket_get_user_data(Socket *sock)
 // src/socket_pool.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/socket_pool.c"
+#line 1 "src/socket_pool.c"
 #include <assert.h>
 #include <stdlib.h>
 
@@ -5230,7 +5230,7 @@ bool socket_pool_secure(SocketPool *pool, SocketHandle handle)
 // src/client.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/client.c"
+#line 1 "src/client.c"
 #include <stdint.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -5689,7 +5689,7 @@ HTTP_Response *http_post(HTTP_String url, HTTP_String *headers, int num_headers,
 // src/server.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/server.c"
+#line 1 "src/server.c"
 #include <stdint.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -6002,7 +6002,7 @@ void http_response_builder_done(HTTP_ResponseBuilder res)
 // src/router.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/router.c"
+#line 1 "src/router.c"
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -6469,7 +6469,7 @@ int http_serve(char *addr, int port, HTTP_Router *router)
 // 3p/wl.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "3p/wl.h"
+#line 1 "3p/wl.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -6565,7 +6565,7 @@ void wl_append     (WL_Runtime *rt);
 // 3p/wl.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "3p/wl.c"
+#line 1 "3p/wl.c"
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -12448,7 +12448,7 @@ void wl_runtime_dump(WL_Runtime *rt)
 // 3p/crypt_blowfish.h
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "3p/crypt_blowfish.h"
+#line 1 "3p/crypt_blowfish.h"
 /*
  * Written by Solar Designer <solar at openwall.com> in 2000-2011.
  * No copyright is claimed, and the software is hereby placed in the public
@@ -12481,7 +12481,7 @@ extern char *_crypt_gensalt_blowfish_rn(const char *prefix,
 // 3p/crypt_blowfish.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "3p/crypt_blowfish.c"
+#line 1 "3p/crypt_blowfish.c"
 /*
  * The crypt_blowfish homepage is:
  *
@@ -13396,7 +13396,7 @@ char *_crypt_gensalt_blowfish_rn(const char *prefix, unsigned long count,
 // src/main.c
 ////////////////////////////////////////////////////////////////////////////////////////
 
-//#line 1 "src/main.c"
+#line 1 "src/main.c"
 #include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -14072,7 +14072,7 @@ static int sqlite3utils_prepare(SQLiteCache *cache, sqlite3_stmt **pstmt, char *
     if (cache->items[i].stmt == NULL) {
 
         sqlite3_stmt *stmt;
-        int ret = sqlite3_prepare_v2(cache->db, fmt, -1, &stmt, NULL);
+        int ret = sqlite3_prepare_v2(cache->db, fmt, fmtlen, &stmt, NULL);
         if (ret != SQLITE_OK) {
             fprintf(stderr, "Failed to prepare statement: %s (%s:%d)\n", sqlite3_errmsg(cache->db), __FILE__, __LINE__); // TODO
             return ret;

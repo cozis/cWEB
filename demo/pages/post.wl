@@ -1,7 +1,8 @@
 include "page.wl"
 
-let posts = $query("SELECT U.username, P.title, P.content FROM Posts as P, Users as U WHERE P.id=? AND U.id=P.author", $resource_id)
-let comments = $query("SELECT C.id, U.username, C.content, C.parent_post, C.parent_comment FROM Comments as C, Users as U WHERE C.parent_post=? AND U.id=C.author", $resource_id)
+let post_id = $args(0)
+let posts = $query("SELECT U.username, P.title, P.content FROM Posts as P, Users as U WHERE P.id=? AND U.id=P.author", post_id)
+let comments = $query("SELECT C.id, U.username, C.content, C.parent_post, C.parent_comment FROM Comments as C, Users as U WHERE C.parent_post=? AND U.id=C.author", post_id)
 
 let lookup = {}
 
@@ -193,7 +194,8 @@ let main =
                 </summary>
                 <div class="add-comment">
                     <form action="/api/comment" method="POST">
-                        <input type="hidden" name="parent_post" value=\'"'\$resource_id\'"' />
+                        <input type="hidden" name="csrf"        value=\'"'\$csrf\'"' />
+                        <input type="hidden" name="parent_post" value=\'"'\post_id\'"' />
                         <textarea name="content" placeholder="Add a comment..."></textarea>
                         <input type="submit" vaue="Publish" />
                     </form>
@@ -201,7 +203,7 @@ let main =
             </details>
         </div>
 
-        \procedure render_comment(comment)
+        \procedure render_comment(post_id, comment)
             <div class="comment">
                 <div class="vote-buttons">
                     <a href="">▲</a>
@@ -221,7 +223,8 @@ let main =
                             </summary>
                             <div class="add-comment">
                                 <form action="/api/comment" method="POST">
-                                    <input type="hidden" name="parent_post"    value=\'"'\$resource_id\'"' />
+                                    <input type="hidden" name="csrf"           value=\'"'\$csrf\'"' />
+                                    <input type="hidden" name="parent_post"    value=\'"'\post_id\'"' />
                                     <input type="hidden" name="parent_comment" value=\'"'\comment.id\'"' />
                                     <textarea name="content" placeholder="Add a comment..."></textarea>
                                     <input type="submit" vaue="Publish" />
@@ -231,7 +234,7 @@ let main =
                 </div>
                 <div class="comment-child">
                 \for child in comment.child:
-                    render_comment(child)
+                    render_comment(post_id, child)
                 </div>
             </div>
 
@@ -240,7 +243,7 @@ let main =
                 No comments
             </div>
         else for comment in root_comments:
-            render_comment(comment)
+            render_comment(post_id, comment)
     </main>
 
 page(post.title, $login_user_id, style, main)

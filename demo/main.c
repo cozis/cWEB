@@ -350,6 +350,7 @@ int main(void)
     }
 
     cweb_trace_sql(cweb, true);
+    cweb_enable_template_cache(cweb, false);
 
     for (;;) {
         CWEB_Request *req = cweb_wait(cweb);
