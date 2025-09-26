@@ -7,31 +7,29 @@
 
 bool valid_name(CWEB_String str)
 {
-    (void) str; // TODO
-    return true;
+    return str.len >= 3 && str.len < 100;
 }
 
 bool valid_email(CWEB_String str)
 {
-    (void) str; // TODO
+    (void) str;
     return true;
 }
 
 bool valid_pass(CWEB_String str)
 {
-    (void) str; // TODO
-    return true;
+    return str.len >= 8 && str.len < 1000;
 }
 
 bool valid_post_title(CWEB_String str)
 {
-    (void) str; // TODO
+    (void) str;
     return true;
 }
 
 bool valid_post_content(CWEB_String str)
 {
-    (void) str; // TODO
+    (void) str;
     return true;
 }
 
@@ -351,10 +349,7 @@ int main(void)
         cert_key,
         private_key
     );
-    if (ret < 0) {
-        // TODO
-        return -1;
-    }
+    if (ret < 0) return -1;
 #endif
 
     CWEB *cweb = cweb_init(addr, port, secure_port, cert_key, private_key);

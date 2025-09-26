@@ -1,8 +1,8 @@
 /*
-Copyright Â© 2025 Francesco Cozzuto
+Copyright © 2025 Francesco Cozzuto
 
 Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the â€œSoftwareâ€),
+copy of this software and associated documentation files (the “Software”),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom the
@@ -11,7 +11,7 @@ Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED â€œAS ISâ€, WITHOUT WARRANTY OF ANY KIND, EXPRESS
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
@@ -248,13 +248,17 @@ typedef struct CWEB_Request CWEB_Request;
 int  cweb_global_init(void);
 void cweb_global_free(void);
 
+// TODO: comment
 CWEB *cweb_init(CWEB_String addr, uint16_t port, uint16_t secure_port,
     CWEB_String cert_key, CWEB_String private_key);
 
+// TODO: comment
 void cweb_free(CWEB *cweb);
 
+// TODO: comment
 int cweb_add_website(CWEB *cweb, CWEB_String domain, CWEB_String cert_file, CWEB_String key_file);
 
+// TODO: comment
 int cweb_create_test_certificate(CWEB_String C, CWEB_String O,
     CWEB_String CN, CWEB_String cert_file, CWEB_String key_file);
 
@@ -271,6 +275,8 @@ void cweb_enable_template_cache(CWEB *cweb, bool enable);
 // Pause execution until a request is available.
 // TODO: When does this function return NULL?
 CWEB_Request *cweb_wait(CWEB *cweb);
+
+bool cweb_match_domain(CWEB_Request *req, CWEB_String str);
 
 // Returns true iff the request matches the specified endpoint
 bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str);
@@ -14518,6 +14524,14 @@ CWEB_Request *cweb_wait(CWEB *cweb)
     }
 
     return req;
+}
+
+bool cweb_match_domain(CWEB_Request *req, CWEB_String str)
+{
+    int idx = http_find_header(req->req->headers, req->req->num_headers, HTTP_STR("host"));
+    if (idx < 0) return false;
+
+    return http_streq((HTTP_String) { str.ptr, str.len }, req->req->headers[idx].value);
 }
 
 bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str)
