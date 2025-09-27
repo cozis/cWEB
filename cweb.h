@@ -14473,6 +14473,13 @@ int cweb_enable_database(CWEB *cweb, CWEB_String database_file, CWEB_String sche
         return -1;
     }
 
+    ret = sqlite3_exec(cweb->db, "PRAGMA foreign_keys = ON;", NULL, NULL, NULL);
+    if (ret != SQLITE_OK) {
+        sqlite3_close(cweb->db);
+        cweb->db = NULL;
+        return -1;
+    }
+
     LoadedFile *schema = load_file(schema_file);
     if (schema == NULL) {
         sqlite3_close(cweb->db);
