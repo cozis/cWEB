@@ -1739,7 +1739,7 @@ void cweb_respond_template_impl(CWEB_Request *req, int status, CWEB_String templ
             break;
 
             case WL_EVAL_ERROR:
-            // wl_runtime_error(rt)
+            CWEB_TRACE("template evaluation error: %s", wl_runtime_error(rt).ptr);
             http_response_builder_undo(req->builder);
             http_response_builder_status(req->builder, 500);
             http_response_builder_done(req->builder);
