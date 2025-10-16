@@ -13753,7 +13753,7 @@ static void value_to_output(StaticOutputBuffer *out, CWEB_VArg arg)
         case CWEB_VARG_TYPE_UL   : append_to_output_u64(out, arg.ul);    break;
         case CWEB_VARG_TYPE_ULL  : append_to_output_u64(out, arg.ull);   break;
         case CWEB_VARG_TYPE_F    : append_to_output_f64(out, arg.f);     break;
-        case CWEB_VARG_TYPE_D    : append_to_output_u64(out, arg.d);     break;
+        case CWEB_VARG_TYPE_D    : append_to_output_f64(out, arg.d);     break;
         case CWEB_VARG_TYPE_B    : append_to_output(out, arg.b ? "true" : "false", arg.b ? 4: 5);break;
         case CWEB_VARG_TYPE_STR  : append_to_output(out, arg.str.ptr, arg.str.len); break;
         case CWEB_VARG_TYPE_HASH : append_to_output(out, arg.hash.data, strlen(arg.hash.data)); break;
@@ -14023,7 +14023,7 @@ static Session *lookup_session_slot(SessionStorage *storage, CWEB_String sess, b
     if (sess.len != SESS_TOKEN_SIZE)
         return NULL;
 
-    uint64_t key;
+    uint64_t key = 0;
     if (sess.len < (int) (2 * sizeof(key)))
         return NULL;
     for (int i = 0; i < (int) sizeof(key); i++) {
@@ -14031,8 +14031,8 @@ static Session *lookup_session_slot(SessionStorage *storage, CWEB_String sess, b
         int high = sess.ptr[(i << 1) | 0];
         int low  = sess.ptr[(i << 1) | 1];
 
-        if (!is_hex_digit(sess.ptr[i+0]) ||
-            !is_hex_digit(sess.ptr[i+1]))
+        if (!is_hex_digit(high) ||
+            !is_hex_digit(low))
             return NULL;
 
         key <<= 4;
@@ -14106,7 +14106,7 @@ static int delete_session(SessionStorage *storage, CWEB_String sess)
         return -1;
     Session *found = lookup_session_slot(storage, sess, false);
     if (found == NULL)
-        return false;
+        return -1;
     ASSERT(found->user >= 0);
     found->user = -2;
     storage->count--;
@@ -14230,15 +14230,20 @@ static int sqlite3utils_prepare(SQLiteCache *cache, sqlite3_stmt **pstmt, char *
         cache->items[i].len = fmtlen;
         cache->items[i].stmt = stmt;
     }
+
     sqlite3_stmt *stmt = cache->items[i].stmt;
 
     *pstmt = stmt;
     return SQLITE_OK;
 }
 
+static void dump_sql(char *fmt, CWEB_VArgs args); // TODO: remove
+
 static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
     sqlite3_stmt **pstmt, char *fmt, CWEB_VArgs args)
 {
+    dump_sql(fmt, args); // TODO: remove
+
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare(cache, &stmt, fmt, strlen(fmt));
     if (ret != SQLITE_OK)
@@ -14256,17 +14261,22 @@ static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
             case CWEB_VARG_TYPE_SS  : ret = sqlite3_bind_int   (stmt, i+1, arg.ss);  break;
             case CWEB_VARG_TYPE_SI  : ret = sqlite3_bind_int   (stmt, i+1, arg.si);  break;
             case CWEB_VARG_TYPE_SL  : ret = sqlite3_bind_int64 (stmt, i+1, arg.sl);  break;
-            case CWEB_VARG_TYPE_SLL : ret = sqlite3_bind_int   (stmt, i+1, arg.sll); break;
+            case CWEB_VARG_TYPE_SLL : ret = sqlite3_bind_int64 (stmt, i+1, arg.sll); break;
             case CWEB_VARG_TYPE_UC  : ret = sqlite3_bind_int   (stmt, i+1, arg.uc);  break;
             case CWEB_VARG_TYPE_US  : ret = sqlite3_bind_int   (stmt, i+1, arg.us);  break;
             case CWEB_VARG_TYPE_UI  : ret = sqlite3_bind_int64 (stmt, i+1, arg.ui);  break;
             case CWEB_VARG_TYPE_UL  : ret = sqlite3_bind_int64 (stmt, i+1, arg.ul);  break;
-            case CWEB_VARG_TYPE_ULL : ret = sqlite3_bind_int64 (stmt, i+1, arg.ull); break;
+            case CWEB_VARG_TYPE_ULL : ret = sqlite3_bind_int64 (stmt, i+1, arg.ull); break; // TODO: overflow?
             case CWEB_VARG_TYPE_F   : ret = sqlite3_bind_double(stmt, i+1, arg.f);   break;
             case CWEB_VARG_TYPE_D   : ret = sqlite3_bind_double(stmt, i+1, arg.d);   break;
             case CWEB_VARG_TYPE_B   : ret = sqlite3_bind_int   (stmt, i+1, arg.b);   break;
             case CWEB_VARG_TYPE_STR : ret = sqlite3_bind_text  (stmt, i+1, arg.str.ptr, arg.str.len, NULL); break;
-            case CWEB_VARG_TYPE_HASH: ret = sqlite3_bind_text  (stmt, i+1, arg.hash.data, -1, NULL); break;
+
+            case CWEB_VARG_TYPE_HASH:
+            CWEB_TRACE("%s: binding hash [%s]", __func__, arg.hash.data);
+            ret = sqlite3_bind_text  (stmt, i+1, arg.hash.data, strlen(arg.hash.data), SQLITE_TRANSIENT);
+            break;
+
             default:
             ASSERT(0);  // TODO
             break;
@@ -14414,7 +14424,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
             case CWEB_VARG_TYPE_PLL:
             {
                 int64_t x = sqlite3_column_int64(res->handle, i);
-                *args.ptr[i].pll = (int) x;
+                *args.ptr[i].pll = x;
             }
             break;
 
@@ -14428,7 +14438,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
             case CWEB_VARG_TYPE_PD:
             {
                 double x = sqlite3_column_double(res->handle, i);
-                *args.ptr[i].pf = (float) x;
+                *args.ptr[i].pd = x;
             }
             break;
 
@@ -14443,6 +14453,13 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
 
             case CWEB_VARG_TYPE_PHASH:
             {
+                if (sqlite3_column_type(res->handle, i) != SQLITE_TEXT) {
+                    CWEB_TRACE("%s couldn't bind to hash argument due to the column not being a string", __func__);
+                    sqlite3_reset(res->handle);
+                    res->handle = NULL;
+                    return -1;
+                }
+
                 char *ptr = sqlite3_column_text(res->handle, i);
                 int   len = sqlite3_column_bytes(res->handle, i);
 
@@ -15217,7 +15234,7 @@ void cweb_respond_template_impl(CWEB_Request *req, int status, CWEB_String templ
                     case CWEB_VARG_TYPE_SL : wl_push_s64(rt, arg.sl);  break;
                     case CWEB_VARG_TYPE_SLL: wl_push_s64(rt, arg.sll); break;
                     case CWEB_VARG_TYPE_F  : wl_push_f64(rt, arg.f);   break;
-                    case CWEB_VARG_TYPE_D  : wl_push_s64(rt, arg.d);   break;
+                    case CWEB_VARG_TYPE_D  : wl_push_f64(rt, arg.d);   break;
                     case CWEB_VARG_TYPE_B  : if (arg.b) wl_push_true(rt); else wl_push_false(rt); break;
                     case CWEB_VARG_TYPE_STR: wl_push_str(rt, (WL_String) { arg.str.ptr, arg.str.len }); break;
                     default:break;

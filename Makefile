@@ -5,7 +5,7 @@ ifeq ($(OS),Windows_NT)
 	FLAGS += -lws2_32 -lbcrypt
 else
 	EXT = .out
-	FLAGS += -lssl -lcrypto -DHTTPS_ENABLED -fsanitize=address,undefined
+	FLAGS += -lssl -lcrypto -DHTTPS_ENABLED
 endif
 
 all: cweb.h cozisnews$(EXT)
