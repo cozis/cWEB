@@ -13716,22 +13716,88 @@ static void append_to_output(StaticOutputBuffer *out, char *src, int len)
 
 static void append_to_output_u64(StaticOutputBuffer *out, uint64_t n)
 {
-    // TODO
+    // TODO: test this function as it was vibecoded
+
+    char buf[32]; // Enough for any 64-bit unsigned integer
+    int len = 0;
+    
+    // Handle zero as special case
+    if (n == 0) {
+        buf[len++] = '0';
+    } else {
+        // Convert to decimal digits (in reverse order)
+        char temp[32];
+        int temp_len = 0;
+        while (n > 0) {
+            temp[temp_len++] = '0' + (n % 10);
+            n /= 10;
+        }
+        // Reverse the digits
+        for (int i = temp_len - 1; i >= 0; i--) {
+            buf[len++] = temp[i];
+        }
+    }
+    
+    append_to_output(out, buf, len);
 }
 
 static void append_to_output_s64(StaticOutputBuffer *out, int64_t n)
 {
-    // TODO
+    // TODO: test this function as it was vibecoded
+
+    // Special case for INT64_MIN to avoid overflow when negating
+    if (n == INT64_MIN) {
+        append_to_output(out, "-9223372036854775808", 20);
+        return;
+    }
+    
+    char buf[32];
+    int len = 0;
+    
+    // Handle negative sign
+    if (n < 0) {
+        buf[len++] = '-';
+        n = -n;
+    }
+    
+    // Convert absolute value
+    if (n == 0) {
+        buf[len++] = '0';
+    } else {
+        char temp[32];
+        int temp_len = 0;
+        while (n > 0) {
+            temp[temp_len++] = '0' + (n % 10);
+            n /= 10;
+        }
+        for (int i = temp_len - 1; i >= 0; i--) {
+            buf[len++] = temp[i];
+        }
+    }
+    
+    append_to_output(out, buf, len);
 }
 
 static void append_to_output_f64(StaticOutputBuffer *out, double n)
 {
-    // TODO
+    // TODO: test this function as it was vibecoded
+
+    char buf[64];
+    // Use %.17g for sufficient precision while avoiding trailing zeros
+    int len = snprintf(buf, sizeof(buf), "%.17g", n);
+    if (len > 0 && len < (int)sizeof(buf))
+        append_to_output(out, buf, len);
 }
 
 static void append_to_output_ptr(StaticOutputBuffer *out, void *p)
 {
-    // TODO
+    // TODO: test this function as it was vibecoded
+
+    char buf[32];
+    // Format pointer in hexadecimal (platform-dependent format)
+    int len = snprintf(buf, sizeof(buf), "%p", p);
+    if (len > 0 && len < (int)sizeof(buf))
+        append_to_output(out, buf, len);
 }
 
 static void value_to_output(StaticOutputBuffer *out, CWEB_VArg arg)
@@ -14237,13 +14303,9 @@ static int sqlite3utils_prepare(SQLiteCache *cache, sqlite3_stmt **pstmt, char *
     return SQLITE_OK;
 }
 
-static void dump_sql(char *fmt, CWEB_VArgs args); // TODO: remove
-
 static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
     sqlite3_stmt **pstmt, char *fmt, CWEB_VArgs args)
 {
-    dump_sql(fmt, args); // TODO: remove
-
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare(cache, &stmt, fmt, strlen(fmt));
     if (ret != SQLITE_OK)
@@ -14271,14 +14333,10 @@ static int sqlite3utils_prepare_and_bind_impl(SQLiteCache *cache,
             case CWEB_VARG_TYPE_D   : ret = sqlite3_bind_double(stmt, i+1, arg.d);   break;
             case CWEB_VARG_TYPE_B   : ret = sqlite3_bind_int   (stmt, i+1, arg.b);   break;
             case CWEB_VARG_TYPE_STR : ret = sqlite3_bind_text  (stmt, i+1, arg.str.ptr, arg.str.len, NULL); break;
-
-            case CWEB_VARG_TYPE_HASH:
-            CWEB_TRACE("%s: binding hash [%s]", __func__, arg.hash.data);
-            ret = sqlite3_bind_text  (stmt, i+1, arg.hash.data, strlen(arg.hash.data), SQLITE_TRANSIENT);
-            break;
+            case CWEB_VARG_TYPE_HASH: ret = sqlite3_bind_text  (stmt, i+1, arg.hash.data, strlen(arg.hash.data), SQLITE_TRANSIENT); break;
 
             default:
-            ASSERT(0);  // TODO
+            ASSERT(0); // TODO
             break;
         }
         if (ret != SQLITE_OK) {
