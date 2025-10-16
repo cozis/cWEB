@@ -55,20 +55,24 @@ static int user_exists(CWEB *cweb, CWEB_String name, CWEB_String pass)
     CWEB_PasswordHash hash;
     int ret = cweb_next_query_row(&res, &user_id, &hash);
     if (ret < 0) {
+        printf("here %s:%d\n", __FILE__, __LINE__); // TODO: remove
         cweb_free_query_result(&res);
         return -1;
     }
     if (ret == 0) {
+        printf("here %s:%d\n", __FILE__, __LINE__); // TODO: remove
         cweb_free_query_result(&res);
         return 0;
     }
 
     ret = cweb_check_password(pass, hash);
     if (ret < 0) {
+        printf("here %s:%d\n", __FILE__, __LINE__); // TODO: remove
         cweb_free_query_result(&res);
         return -1;
     }
     if (ret > 0) {
+        printf("here %s:%d\n", __FILE__, __LINE__); // TODO: remove
         cweb_free_query_result(&res);
         return 0;
     }
@@ -329,7 +333,7 @@ int main(void)
 {
     CWEB_String addr          = CWEB_STR("127.0.0.1");
     uint16_t    port          = 8080;
-    CWEB_String database_file = CWEB_STR("demo.db");
+    CWEB_String database_file = CWEB_STR(":memory:");
     CWEB_String schema_file   = CWEB_STR("demo/schema.sql");
 
     if (cweb_global_init() < 0)

@@ -6,6 +6,8 @@
 
 #define CWEB_STR(X) ((CWEB_String) { (X), (int) sizeof(X)-1 })
 
+#define CWEB_TRACE(X, ...) fprintf(stderr, ("TRACE: " X "\n"), ##__VA_ARGS__);
+
 typedef struct {
     char *ptr;
     int   len;

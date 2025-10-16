@@ -122,6 +122,49 @@ CWEB_String cweb_trim(CWEB_String s)
     return (CWEB_String) { s2.ptr, s2.len };
 }
 
+static const char *type_names__[] = {
+    [CWEB_VARG_TYPE_C] = "char",
+    [CWEB_VARG_TYPE_S] = "short",
+    [CWEB_VARG_TYPE_I] = "int",
+    [CWEB_VARG_TYPE_L] = "long",
+    [CWEB_VARG_TYPE_LL] = "long long",
+    [CWEB_VARG_TYPE_SC] = "signed char",
+    [CWEB_VARG_TYPE_SS] = "signed short",
+    [CWEB_VARG_TYPE_SI] = "signed int",
+    [CWEB_VARG_TYPE_SL] = "signed long",
+    [CWEB_VARG_TYPE_SLL] = "signed long long",
+    [CWEB_VARG_TYPE_UC] = "unsigned char",
+    [CWEB_VARG_TYPE_US] = "unsigned short",
+    [CWEB_VARG_TYPE_UI] = "unsigned int",
+    [CWEB_VARG_TYPE_UL] = "unsigned long",
+    [CWEB_VARG_TYPE_ULL] = "unsigned long long",
+    [CWEB_VARG_TYPE_F] = "float",
+    [CWEB_VARG_TYPE_D] = "double",
+    [CWEB_VARG_TYPE_B] = "bool",
+    [CWEB_VARG_TYPE_STR] = "string",
+    [CWEB_VARG_TYPE_HASH] = "hash",
+    [CWEB_VARG_TYPE_PC] = "char*",
+    [CWEB_VARG_TYPE_PS] = "short*",
+    [CWEB_VARG_TYPE_PI] = "int*",
+    [CWEB_VARG_TYPE_PL] = "long*",
+    [CWEB_VARG_TYPE_PLL] = "long long*",
+    [CWEB_VARG_TYPE_PSC] = "signed char*",
+    [CWEB_VARG_TYPE_PSS] = "signed short*",
+    [CWEB_VARG_TYPE_PSI] = "signed int*",
+    [CWEB_VARG_TYPE_PSL] = "signed long*",
+    [CWEB_VARG_TYPE_PSLL] = "signed long long*",
+    [CWEB_VARG_TYPE_PUC] = "unsigned char*",
+    [CWEB_VARG_TYPE_PUS] = "unsigned short*",
+    [CWEB_VARG_TYPE_PUI] = "unsigned int*",
+    [CWEB_VARG_TYPE_PUL] = "unsigned long*",
+    [CWEB_VARG_TYPE_PULL] = "unsigned long long*",
+    [CWEB_VARG_TYPE_PF] = "float*",
+    [CWEB_VARG_TYPE_PD] = "double*",
+    [CWEB_VARG_TYPE_PB] = "bool*",
+    [CWEB_VARG_TYPE_PSTR] = "string*",
+    [CWEB_VARG_TYPE_PHASH] = "hash*",
+};
+
 CWEB_VArg cweb_varg_from_c    (char c)            { return (CWEB_VArg) { CWEB_VARG_TYPE_C,    .c=c       }; }
 CWEB_VArg cweb_varg_from_s    (short s)           { return (CWEB_VArg) { CWEB_VARG_TYPE_S,    .s=s       }; }
 CWEB_VArg cweb_varg_from_i    (int i)             { return (CWEB_VArg) { CWEB_VARG_TYPE_I,    .i=i       }; }
@@ -162,7 +205,6 @@ CWEB_VArg cweb_varg_from_pd   (double *pd)        { return (CWEB_VArg) { CWEB_VA
 CWEB_VArg cweb_varg_from_pb   (bool *pb)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PB,   .pb=pb     }; }
 CWEB_VArg cweb_varg_from_pstr (CWEB_String *pstr) { return (CWEB_VArg) { CWEB_VARG_TYPE_PSTR, .pstr=pstr }; }
 CWEB_VArg cweb_varg_from_phash(CWEB_PasswordHash *phash) { return (CWEB_VArg) { CWEB_VARG_TYPE_PHASH, .phash=phash }; }
-
 
 typedef struct {
     char *dst;
@@ -316,7 +358,7 @@ static void free_loaded_files(LoadedFile *loaded_file)
     }
 }
 
-/////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
 // RANDOM
 ////////////////////////////////////////////////////////////////
 
@@ -371,14 +413,18 @@ int cweb_hash_password(CWEB_String pass, int cost, CWEB_PasswordHash *hash)
 int cweb_check_password(CWEB_String pass, CWEB_PasswordHash hash)
 {
     char passzt[128];
-    if (pass.len >= (int) sizeof(passzt))
+    if (pass.len >= (int) sizeof(passzt)) {
+        CWEB_TRACE("%s: static buffer limit reached", __func__);
         return -1;
+    }
     memcpy(passzt, pass.ptr, pass.len);
     passzt[pass.len] = '\0';
 
     CWEB_PasswordHash new_hash;
-    if (_crypt_blowfish_rn(passzt, hash.data, new_hash.data, sizeof(new_hash.data)) == NULL)
+    if (_crypt_blowfish_rn(passzt, hash.data, new_hash.data, sizeof(new_hash.data)) == NULL) {
+        CWEB_TRACE("%s: couldn't calculate hash (password=[%.*s], hash=[%.*s])", __func__, pass.len, pass.ptr, (int) strnlen(hash.data, sizeof(hash.data)), hash.data);
         return -1;
+    }
 
     if (strcmp(hash.data, new_hash.data)) // TODO: should be constant-time
         return 1;
@@ -451,7 +497,7 @@ static int pack_token(char *src, int srclen, char *dst, int dstlen)
         int low  = src[i+1];
         if (!is_hex_digit(high) || !is_hex_digit(low))
             return -1;
-        dst[i] = (hex_digit_to_int(high) << 4) | (hex_digit_to_int(low) << 0);
+        dst[i >> 1] = (hex_digit_to_int(high) << 4) | (hex_digit_to_int(low) << 0);
     }
 
     return 0;
@@ -769,11 +815,14 @@ int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args)
 
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
-    if (ret != SQLITE_OK)
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "sqlite3 prepare+bind error: %s (%s:%d)\n", sqlite3_errmsg(cweb->db), __FILE__, __LINE__); // TODO
         return -1;
+    }
 
     ret = sqlite3_step(stmt);
     if (ret != SQLITE_DONE) {
+        fprintf(stderr, "sqlite3_step error: %s (%s:%d)\n", sqlite3_errmsg(cweb->db), __FILE__, __LINE__); // TODO
         sqlite3_reset(stmt);
         return -1;
     }
@@ -799,8 +848,10 @@ CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs arg
 
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
-    if (ret != SQLITE_OK)
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "sqlite3 prepare+bind error: %s (%s:%d)\n", sqlite3_errmsg(cweb->db), __FILE__, __LINE__); // TODO
         return (CWEB_QueryResult) { NULL };
+    }
 
     return (CWEB_QueryResult) { stmt };
 #else
@@ -811,21 +862,27 @@ CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs arg
 int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
 {
 #ifdef CWEB_ENABLE_DATABASE
-    if (res->handle == NULL)
+    if (res->handle == NULL) {
+        CWEB_TRACE("%s failed because database is initialized", __func__);
         return -1;
+    }
 
     int ret = sqlite3_step(res->handle);
 
-    if (ret == SQLITE_DONE)
+    if (ret == SQLITE_DONE) {
+        CWEB_TRACE("%s returned no row", __func__);
         return 0;
+    }
 
     if (ret != SQLITE_ROW) {
+        CWEB_TRACE("%s didn't return ROW or DONE (%d)", __func__, ret);
         sqlite3_reset(res->handle);
         res->handle = NULL;
         return -1;
     }
 
     if (sqlite3_column_count(res->handle) != args.len) {
+        CWEB_TRACE("%s returned an unexpected column count", __func__);
         sqlite3_reset(res->handle);
         res->handle = NULL;
         return -1;
@@ -838,6 +895,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
             {
                 int64_t x = sqlite3_column_int64(res->handle, i);
                 if (x < INT_MIN || x > INT_MAX) {
+                    CWEB_TRACE("%s couldn't bind integer out of range", __func__);
                     sqlite3_reset(res->handle);
                     res->handle = NULL;
                     return -1;
@@ -850,6 +908,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
             {
                 int64_t x = sqlite3_column_int64(res->handle, i);
                 if (x < LONG_MIN || x > LONG_MAX) {
+                    CWEB_TRACE("%s couldn't bind integer out of range", __func__);
                     sqlite3_reset(res->handle);
                     res->handle = NULL;
                     return -1;
@@ -888,7 +947,27 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
             }
             break;
 
+            case CWEB_VARG_TYPE_PHASH:
+            {
+                char *ptr = sqlite3_column_text(res->handle, i);
+                int   len = sqlite3_column_bytes(res->handle, i);
+
+                CWEB_TRACE("%s: hash value (\"%.*s\", %d)", __func__, len, ptr, len);
+
+                CWEB_PasswordHash *hash = args.ptr[i].phash;
+                if ((int) sizeof(hash->data) <= len) {
+                    CWEB_TRACE("%s couldn't bind to hash argument", __func__);
+                    sqlite3_reset(res->handle);
+                    res->handle = NULL;
+                    return -1;
+                }
+                memset(hash->data, 0, sizeof(hash->data));
+                memcpy(hash->data, ptr, len);
+            }
+            break;
+
             default:
+            CWEB_TRACE("%s couldn't bind to unexpected argument type %s", __func__, type_names__[args.ptr[i].type]);
             sqlite3_reset(res->handle);
             res->handle = NULL;
             return -1;
@@ -899,6 +978,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
 #else
     (void) res;
     (void) args;
+    CWEB_TRACE("%s is unsupported", __func__);
     return -1;
 #endif
 }

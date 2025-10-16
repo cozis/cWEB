@@ -1,8 +1,8 @@
 /*
-Copyright © 2025 Francesco Cozzuto
+Copyright ¬© 2025 Francesco Cozzuto
 
 Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the ìSoftwareî),
+copy of this software and associated documentation files (the ‚ÄúSoftware‚Äù),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom the
@@ -11,7 +11,7 @@ Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED ìAS ISî, WITHOUT WARRANTY OF ANY KIND, EXPRESS
+THE SOFTWARE IS PROVIDED ‚ÄúAS IS‚Äù, WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
@@ -34,6 +34,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 #define CWEB_ENABLE_TEMPLATE
 
 #define CWEB_STR(X) ((CWEB_String) { (X), (int) sizeof(X)-1 })
+
+#define CWEB_TRACE(X, ...) fprintf(stderr, ("TRACE: " X "\n"), ##__VA_ARGS__);
 
 typedef struct {
     char *ptr;
@@ -6486,6 +6488,8 @@ int http_serve(char *addr, int port, HTTP_Router *router)
 #include <stdint.h>
 #include <stdbool.h>
 
+#define WL_STR(X) ((WL_String) { (X), (int) sizeof(X)-1 })
+
 typedef struct WL_Runtime  WL_Runtime;
 typedef struct WL_Compiler WL_Compiler;
 
@@ -6530,17 +6534,90 @@ typedef struct {
     WL_String str;
 } WL_EvalResult;
 
-WL_Compiler*  wl_compiler_init  (WL_Arena *arena);
-WL_AddResult  wl_compiler_add   (WL_Compiler *compiler, WL_String path, WL_String content);
-int           wl_compiler_link  (WL_Compiler *compiler, WL_Program *program);
-WL_String     wl_compiler_error (WL_Compiler *compiler);
-int           wl_dump_ast       (WL_Compiler *compiler, char *dst, int cap);
-void          wl_dump_program   (WL_Program program);
+// Creates a compilation unit for a program
+// The provided arena (which can't be NULL) is
+// used for all memory allocations until a
+// program is produced or an error occurs.
+// If not enough memory is provided, NULL is
+// returned.
+WL_Compiler *wl_compiler_init(WL_Arena *arena);
 
-WL_Runtime*   wl_runtime_init   (WL_Arena *arena, WL_Program program);
-WL_EvalResult wl_runtime_eval   (WL_Runtime *rt);
-WL_String     wl_runtime_error  (WL_Runtime *rt);
-void          wl_runtime_dump   (WL_Runtime *rt);
+// Adds a file to the current compilation unit
+// and returns
+//
+//   WL_ADD_ERROR if an error occurred
+//
+//   WL_ADD_AGAIN if the file included a different
+//   file that also needs to be added to the unit,
+//   in which case the file name is in the "path"
+//   field of the return value.
+//
+//   WL_ADD_LINK all sources were processed and
+//   the unit is ready for linking
+//
+// Note that the source of all files needs to
+// stay alive until the program is linked as the
+// compiler may keep references to it until then.
+WL_AddResult wl_compiler_add(WL_Compiler *compiler, WL_String path, WL_String content);
+
+// Links a compilation unit producing an executable.
+// The output program is just an array of bytes
+// allocated using the compiler's arena memory and
+// may be written to disk or any other external system
+// for caching.
+//
+// On error, -1 is returned and the error text can
+// be retrieved using wl_compiler_error. On success,
+// 0 is returned.
+int wl_compiler_link(WL_Compiler *compiler, WL_Program *program);
+
+// Returns the null-terminated error string for a
+// compilation unit that failed.
+WL_String wl_compiler_error(WL_Compiler *compiler);
+
+// Serializes the AST of the source parsed in this
+// compilation unit by writing the string to the
+// rovided buffer and returning the number of bytes
+// written to it.
+//
+// If the provided buffer is too small, the function
+// fills it up and returns the number of bytes that
+// would have been written if the buffer was large
+// enough. On error, -1 is returned.
+int wl_dump_ast(WL_Compiler *compiler, char *dst, int cap);
+
+// Writes the bytecode of a program to stdout as a
+// human-readable string.
+void wl_dump_program(WL_Program program);
+
+// Creates an evaluation context for a bytecode program
+// All memory used while running the program will be
+// allocated from the provided arena.
+//
+// If not enough memory was provided or the program is
+// invalid, NULL is returned.
+WL_Runtime *wl_runtime_init(WL_Arena *arena, WL_Program program);
+
+// Run the program associated to this runtime until an
+// event happens. The event may be one of:
+//
+//   WL_EVAL_DONE if execution is complete
+//
+//   WL_EVAL_ERROR if execution failed
+//
+//   WL_EVAL_OUTPUT if data is available for output,
+//   in which case the field "str" points to it
+//
+//   WL_EVAL_SYSVAR if the program requested the value
+//   of an external symbol.
+//
+//   WL_EVAL_SYSCALL
+//
+WL_EvalResult wl_runtime_eval(WL_Runtime *rt);
+
+WL_String     wl_runtime_error(WL_Runtime *rt);
+
+void          wl_runtime_dump(WL_Runtime *rt);
 
 bool wl_streq      (WL_String a, char *b, int blen);
 int  wl_arg_count  (WL_Runtime *rt);
@@ -7342,14 +7419,19 @@ static Node *parse_html(Parser *p)
 
     bool no_body = false;
     Scanner *s = &p->s;
-    for (;;) {
+    for (int quote = 0;;) {
 
         int off = s->cur;
 
-        bool quotes = false;
-        while (s->cur < s->len && s->src[s->cur] != '\\' && (quotes || (s->src[s->cur] != '/' && s->src[s->cur] != '>'))) {
-            if (s->src[s->cur] == '"')
-                quotes = !quotes;
+        while (s->cur < s->len && s->src[s->cur] != '\\' && (quote || (s->src[s->cur] != '/' && s->src[s->cur] != '>'))) {
+            if (quote) {
+                if (quote == s->src[s->cur])
+                    quote = 0;
+            } else {
+                char c = s->src[s->cur];
+                if (c == '"' || c == '\'')
+                    quote = c;
+            }
             s->cur++;
         }
 
@@ -8013,7 +8095,7 @@ static Node *parse_expr_inner(Parser *p, Node *left, int min_prec, int flags)
         Token t1 = next_token_or_newline(p);
         if (precedence(t1, flags) < min_prec) {
             p->s = saved;
-           break;
+            break;
         }
 
         Node *right = parse_atom(p);
@@ -13534,6 +13616,49 @@ CWEB_String cweb_trim(CWEB_String s)
     return (CWEB_String) { s2.ptr, s2.len };
 }
 
+static const char *type_names__[] = {
+    [CWEB_VARG_TYPE_C] = "char",
+    [CWEB_VARG_TYPE_S] = "short",
+    [CWEB_VARG_TYPE_I] = "int",
+    [CWEB_VARG_TYPE_L] = "long",
+    [CWEB_VARG_TYPE_LL] = "long long",
+    [CWEB_VARG_TYPE_SC] = "signed char",
+    [CWEB_VARG_TYPE_SS] = "signed short",
+    [CWEB_VARG_TYPE_SI] = "signed int",
+    [CWEB_VARG_TYPE_SL] = "signed long",
+    [CWEB_VARG_TYPE_SLL] = "signed long long",
+    [CWEB_VARG_TYPE_UC] = "unsigned char",
+    [CWEB_VARG_TYPE_US] = "unsigned short",
+    [CWEB_VARG_TYPE_UI] = "unsigned int",
+    [CWEB_VARG_TYPE_UL] = "unsigned long",
+    [CWEB_VARG_TYPE_ULL] = "unsigned long long",
+    [CWEB_VARG_TYPE_F] = "float",
+    [CWEB_VARG_TYPE_D] = "double",
+    [CWEB_VARG_TYPE_B] = "bool",
+    [CWEB_VARG_TYPE_STR] = "string",
+    [CWEB_VARG_TYPE_HASH] = "hash",
+    [CWEB_VARG_TYPE_PC] = "char*",
+    [CWEB_VARG_TYPE_PS] = "short*",
+    [CWEB_VARG_TYPE_PI] = "int*",
+    [CWEB_VARG_TYPE_PL] = "long*",
+    [CWEB_VARG_TYPE_PLL] = "long long*",
+    [CWEB_VARG_TYPE_PSC] = "signed char*",
+    [CWEB_VARG_TYPE_PSS] = "signed short*",
+    [CWEB_VARG_TYPE_PSI] = "signed int*",
+    [CWEB_VARG_TYPE_PSL] = "signed long*",
+    [CWEB_VARG_TYPE_PSLL] = "signed long long*",
+    [CWEB_VARG_TYPE_PUC] = "unsigned char*",
+    [CWEB_VARG_TYPE_PUS] = "unsigned short*",
+    [CWEB_VARG_TYPE_PUI] = "unsigned int*",
+    [CWEB_VARG_TYPE_PUL] = "unsigned long*",
+    [CWEB_VARG_TYPE_PULL] = "unsigned long long*",
+    [CWEB_VARG_TYPE_PF] = "float*",
+    [CWEB_VARG_TYPE_PD] = "double*",
+    [CWEB_VARG_TYPE_PB] = "bool*",
+    [CWEB_VARG_TYPE_PSTR] = "string*",
+    [CWEB_VARG_TYPE_PHASH] = "hash*",
+};
+
 CWEB_VArg cweb_varg_from_c    (char c)            { return (CWEB_VArg) { CWEB_VARG_TYPE_C,    .c=c       }; }
 CWEB_VArg cweb_varg_from_s    (short s)           { return (CWEB_VArg) { CWEB_VARG_TYPE_S,    .s=s       }; }
 CWEB_VArg cweb_varg_from_i    (int i)             { return (CWEB_VArg) { CWEB_VARG_TYPE_I,    .i=i       }; }
@@ -13574,7 +13699,6 @@ CWEB_VArg cweb_varg_from_pd   (double *pd)        { return (CWEB_VArg) { CWEB_VA
 CWEB_VArg cweb_varg_from_pb   (bool *pb)          { return (CWEB_VArg) { CWEB_VARG_TYPE_PB,   .pb=pb     }; }
 CWEB_VArg cweb_varg_from_pstr (CWEB_String *pstr) { return (CWEB_VArg) { CWEB_VARG_TYPE_PSTR, .pstr=pstr }; }
 CWEB_VArg cweb_varg_from_phash(CWEB_PasswordHash *phash) { return (CWEB_VArg) { CWEB_VARG_TYPE_PHASH, .phash=phash }; }
-
 
 typedef struct {
     char *dst;
@@ -13728,7 +13852,7 @@ static void free_loaded_files(LoadedFile *loaded_file)
     }
 }
 
-/////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////
 // RANDOM
 ////////////////////////////////////////////////////////////////
 
@@ -13783,14 +13907,18 @@ int cweb_hash_password(CWEB_String pass, int cost, CWEB_PasswordHash *hash)
 int cweb_check_password(CWEB_String pass, CWEB_PasswordHash hash)
 {
     char passzt[128];
-    if (pass.len >= (int) sizeof(passzt))
+    if (pass.len >= (int) sizeof(passzt)) {
+        CWEB_TRACE("%s: static buffer limit reached", __func__);
         return -1;
+    }
     memcpy(passzt, pass.ptr, pass.len);
     passzt[pass.len] = '\0';
 
     CWEB_PasswordHash new_hash;
-    if (_crypt_blowfish_rn(passzt, hash.data, new_hash.data, sizeof(new_hash.data)) == NULL)
+    if (_crypt_blowfish_rn(passzt, hash.data, new_hash.data, sizeof(new_hash.data)) == NULL) {
+        CWEB_TRACE("%s: couldn't calculate hash (password=[%.*s], hash=[%.*s])", __func__, pass.len, pass.ptr, (int) strnlen(hash.data, sizeof(hash.data)), hash.data);
         return -1;
+    }
 
     if (strcmp(hash.data, new_hash.data)) // TODO: should be constant-time
         return 1;
@@ -13863,7 +13991,7 @@ static int pack_token(char *src, int srclen, char *dst, int dstlen)
         int low  = src[i+1];
         if (!is_hex_digit(high) || !is_hex_digit(low))
             return -1;
-        dst[i] = (hex_digit_to_int(high) << 4) | (hex_digit_to_int(low) << 0);
+        dst[i >> 1] = (hex_digit_to_int(high) << 4) | (hex_digit_to_int(low) << 0);
     }
 
     return 0;
@@ -14181,11 +14309,14 @@ int64_t cweb_database_insert_impl(CWEB *cweb, char *fmt, CWEB_VArgs args)
 
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
-    if (ret != SQLITE_OK)
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "sqlite3 prepare+bind error: %s (%s:%d)\n", sqlite3_errmsg(cweb->db), __FILE__, __LINE__); // TODO
         return -1;
+    }
 
     ret = sqlite3_step(stmt);
     if (ret != SQLITE_DONE) {
+        fprintf(stderr, "sqlite3_step error: %s (%s:%d)\n", sqlite3_errmsg(cweb->db), __FILE__, __LINE__); // TODO
         sqlite3_reset(stmt);
         return -1;
     }
@@ -14211,8 +14342,10 @@ CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs arg
 
     sqlite3_stmt *stmt;
     int ret = sqlite3utils_prepare_and_bind_impl(cweb->dbcache, &stmt, fmt, args);
-    if (ret != SQLITE_OK)
+    if (ret != SQLITE_OK) {
+        fprintf(stderr, "sqlite3 prepare+bind error: %s (%s:%d)\n", sqlite3_errmsg(cweb->db), __FILE__, __LINE__); // TODO
         return (CWEB_QueryResult) { NULL };
+    }
 
     return (CWEB_QueryResult) { stmt };
 #else
@@ -14223,21 +14356,27 @@ CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs arg
 int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
 {
 #ifdef CWEB_ENABLE_DATABASE
-    if (res->handle == NULL)
+    if (res->handle == NULL) {
+        CWEB_TRACE("%s failed because database is initialized", __func__);
         return -1;
+    }
 
     int ret = sqlite3_step(res->handle);
 
-    if (ret == SQLITE_DONE)
+    if (ret == SQLITE_DONE) {
+        CWEB_TRACE("%s returned no row", __func__);
         return 0;
+    }
 
     if (ret != SQLITE_ROW) {
+        CWEB_TRACE("%s didn't return ROW or DONE (%d)", __func__, ret);
         sqlite3_reset(res->handle);
         res->handle = NULL;
         return -1;
     }
 
     if (sqlite3_column_count(res->handle) != args.len) {
+        CWEB_TRACE("%s returned an unexpected column count", __func__);
         sqlite3_reset(res->handle);
         res->handle = NULL;
         return -1;
@@ -14250,6 +14389,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
             {
                 int64_t x = sqlite3_column_int64(res->handle, i);
                 if (x < INT_MIN || x > INT_MAX) {
+                    CWEB_TRACE("%s couldn't bind integer out of range", __func__);
                     sqlite3_reset(res->handle);
                     res->handle = NULL;
                     return -1;
@@ -14262,6 +14402,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
             {
                 int64_t x = sqlite3_column_int64(res->handle, i);
                 if (x < LONG_MIN || x > LONG_MAX) {
+                    CWEB_TRACE("%s couldn't bind integer out of range", __func__);
                     sqlite3_reset(res->handle);
                     res->handle = NULL;
                     return -1;
@@ -14300,7 +14441,27 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
             }
             break;
 
+            case CWEB_VARG_TYPE_PHASH:
+            {
+                char *ptr = sqlite3_column_text(res->handle, i);
+                int   len = sqlite3_column_bytes(res->handle, i);
+
+                CWEB_TRACE("%s: hash value (\"%.*s\", %d)", __func__, len, ptr, len);
+
+                CWEB_PasswordHash *hash = args.ptr[i].phash;
+                if ((int) sizeof(hash->data) <= len) {
+                    CWEB_TRACE("%s couldn't bind to hash argument", __func__);
+                    sqlite3_reset(res->handle);
+                    res->handle = NULL;
+                    return -1;
+                }
+                memset(hash->data, 0, sizeof(hash->data));
+                memcpy(hash->data, ptr, len);
+            }
+            break;
+
             default:
+            CWEB_TRACE("%s couldn't bind to unexpected argument type %s", __func__, type_names__[args.ptr[i].type]);
             sqlite3_reset(res->handle);
             res->handle = NULL;
             return -1;
@@ -14311,6 +14472,7 @@ int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args)
 #else
     (void) res;
     (void) args;
+    CWEB_TRACE("%s is unsupported", __func__);
     return -1;
 #endif
 }

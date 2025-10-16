@@ -42,8 +42,9 @@ let style =
 let main =
     <main>
 
-        \if len(posts) == 0:
+        \if len(posts) == 0: {
             <div id="no-posts">There are no posts yet!</div>
+        }
 
         \for post in posts: {
 
@@ -55,10 +56,10 @@ let main =
 
             <div class="item">
                 <div>
-                    <a href=\'"'\link\'"'>\escape(post.title)</a>
+                    <a href="\{link}">\{escape post.title}</a>
                 </div>
                 <div>
-                    <span>\escape(post.date)</span> | <span>\escape(post.num_comments) comments</span>
+                    <span>\{escape post.date}</span> | <span>\{escape post.num_comments} comments</span>
                 </div>
             </div>
         }
