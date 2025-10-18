@@ -3,3 +3,4 @@
 *.exe
 *.db
 *.pem
+crash_*.txt

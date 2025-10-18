@@ -52,6 +52,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 header.append_text("#ifndef CWEB_INCLUDED\n")
 header.append_text("#define CWEB_INCLUDED\n")
+header.append_text("#define _GNU_SOURCE")
 header.append_file("src/main.h")
 header.append_text("#endif // CWEB_INCLUDED\n")
 

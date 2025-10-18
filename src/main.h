@@ -221,6 +221,8 @@ typedef struct CWEB_Request CWEB_Request;
 int  cweb_global_init(void);
 void cweb_global_free(void);
 
+void cweb_enable_crash_logger(CWEB_String file);
+
 // TODO: comment
 CWEB *cweb_init(CWEB_String addr, uint16_t port, uint16_t secure_port,
     CWEB_String cert_key, CWEB_String private_key);
