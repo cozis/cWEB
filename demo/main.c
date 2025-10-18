@@ -248,8 +248,6 @@ static void endpoint_index(CWEB *cweb, CWEB_Request *req)
 {
     (void) cweb;
 
-    __builtin_trap(); // TODO: remove me
-
     cweb_respond_template(req, 200, CWEB_STR("demo/pages/index.wl"));
 }
 
@@ -337,9 +335,11 @@ int main(void)
     if (cweb_global_init() < 0)
         return -1;
 
-    char buf[128];
-    int len = snprintf(buf, sizeof(buf), "crash_%d.txt", getpid());
-    cweb_enable_crash_logger((CWEB_String) { buf, len });
+    {
+        char buf[128];
+        int len = snprintf(buf, sizeof(buf), "crash_%d.txt", getpid());
+        cweb_enable_crash_logger((CWEB_String) { buf, len });
+    }
 
     uint16_t    secure_port = 0;
     CWEB_String cert_key;
