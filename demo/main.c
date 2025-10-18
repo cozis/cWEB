@@ -55,24 +55,20 @@ static int user_exists(CWEB *cweb, CWEB_String name, CWEB_String pass)
     CWEB_PasswordHash hash;
     int ret = cweb_next_query_row(&res, &user_id, &hash);
     if (ret < 0) {
-        printf("here %s:%d\n", __FILE__, __LINE__); // TODO: remove
         cweb_free_query_result(&res);
         return -1;
     }
     if (ret == 0) {
-        printf("here %s:%d\n", __FILE__, __LINE__); // TODO: remove
         cweb_free_query_result(&res);
         return 0;
     }
 
     ret = cweb_check_password(pass, hash);
     if (ret < 0) {
-        printf("here %s:%d\n", __FILE__, __LINE__); // TODO: remove
         cweb_free_query_result(&res);
         return -1;
     }
     if (ret > 0) {
-        printf("here %s:%d\n", __FILE__, __LINE__); // TODO: remove
         cweb_free_query_result(&res);
         return 0;
     }

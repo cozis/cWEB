@@ -1,7 +1,7 @@
 include "page.wl"
 
-let post_id = $args(0)
-let posts = $query("SELECT U.username, P.title, P.content FROM Posts as P, Users as U WHERE P.id=? AND U.id=P.author", post_id)
+let post_id  = $args(0)
+let posts    = $query("SELECT U.username, P.title, P.content FROM Posts as P, Users as U WHERE P.id=? AND U.id=P.author", post_id)
 let comments = $query("SELECT C.id, U.username, C.content, C.parent_post, C.parent_comment FROM Comments as C, Users as U WHERE C.parent_post=? AND U.id=C.author", post_id)
 
 let lookup = {}

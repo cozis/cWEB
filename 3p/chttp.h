@@ -193,6 +193,9 @@ HTTP_String http_get_cookie     (HTTP_Request *req, HTTP_String name);
 HTTP_String http_get_param      (HTTP_String body, HTTP_String str, char *mem, int cap);
 int         http_get_param_i    (HTTP_String body, HTTP_String str);
 
+// Checks whether the request was meant for the host with the given
+// domain an port. If port is -1, the default value of 80 is assumed.
+bool http_match_host(HTTP_Request *req, HTTP_String domain, int port);
 
 #endif // PARSE_INCLUDED
 
@@ -499,28 +502,4 @@ void         http_response_builder_undo    (HTTP_ResponseBuilder res);
 void         http_response_builder_done    (HTTP_ResponseBuilder res);
 
 #endif // HTTP_SERVER_INCLUDED
-
-////////////////////////////////////////////////////////////////////////////////////////
-// src/router.h
-////////////////////////////////////////////////////////////////////////////////////////
-
-#line 1 "src/router.h"
-#ifndef HTTP_ROUTER_INCLUDED
-#define HTTP_ROUTER_INCLUDED
-
-#ifndef HTTP_AMALGAMATION
-#include "server.h"
-#endif
-
-typedef struct HTTP_Router HTTP_Router;
-typedef void (*HTTP_RouterFunc)(HTTP_Request*, HTTP_ResponseBuilder, void*);;
-
-HTTP_Router* http_router_init    (void);
-void         http_router_free    (HTTP_Router *router);
-void         http_router_resolve (HTTP_Router *router, HTTP_Request *req, HTTP_ResponseBuilder res);
-void         http_router_dir     (HTTP_Router *router, HTTP_String endpoint, HTTP_String path);
-void         http_router_func    (HTTP_Router *router, HTTP_Method method, HTTP_String endpoint, HTTP_RouterFunc func, void*);
-int          http_serve          (char *addr, int port, HTTP_Router *router);
-
-#endif // HTTP_ROUTER_INCLUDED
 #endif // HTTP_AMALGAMATION

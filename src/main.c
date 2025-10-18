@@ -90,6 +90,9 @@ struct CWEB {
     int pool_cap;
     char *pool;
 
+    uint16_t port;
+    uint16_t secure_port;
+
     // Login
     SessionStorage *session_storage;
 
@@ -1126,6 +1129,8 @@ CWEB *cweb_init(CWEB_String addr, uint16_t port, uint16_t secure_port,
         free(cweb);
         return NULL;
     }
+    cweb->port = port;
+    cweb->secure_port = secure_port;
 
 #ifdef CWEB_ENABLE_DATABASE
     cweb->db = NULL;
@@ -1278,10 +1283,20 @@ CWEB_Request *cweb_wait(CWEB *cweb)
 
 bool cweb_match_domain(CWEB_Request *req, CWEB_String str)
 {
-    int idx = http_find_header(req->req->headers, req->req->num_headers, HTTP_STR("host"));
-    if (idx < 0) return false;
+    uint16_t port        = req->cweb->port;
+    uint16_t secure_port = req->cweb->secure_port;
 
-    return http_streq((HTTP_String) { str.ptr, str.len }, req->req->headers[idx].value);
+    HTTP_String str2 = { str.ptr, str.len };
+
+    if (port > 0
+        && http_match_host(req->req, str2, port))
+        return true;
+
+    if (secure_port > 0
+        && http_match_host(req->req, str2, secure_port))
+        return true;
+
+    return false;
 }
 
 bool cweb_match_endpoint(CWEB_Request *req, CWEB_String str)
