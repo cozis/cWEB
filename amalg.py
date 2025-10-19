@@ -105,6 +105,19 @@ header.append_text("#undef MAX\n")
 header.append_text("#undef ASSERT\n")
 header.append_text("#undef SIZEOF\n")
 
+header.append_text("#define is_digit is_digit__json\n")
+header.append_text("#define alloc alloc__json\n")
+header.append_text("#define grow_alloc grow_alloc__json\n")
+header.append_text("#define parse_array parse_array__json\n")
+
+header.append_file("3p/json.h")
+header.append_file("3p/json.c")
+
+header.append_text("#undef parse_array")
+header.append_text("#undef grow_alloc\n")
+header.append_text("#undef alloc\n")
+header.append_text("#undef is_digit\n")
+
 header.append_file("3p/crypt_blowfish.h")
 header.append_file("3p/crypt_blowfish.c")
 header.append_file("src/main.c")

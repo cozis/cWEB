@@ -22,6 +22,7 @@
 #include "wl.h"
 #endif
 #include "chttp.h"
+#include "json.h"
 #include "main.h"
 #endif
 
@@ -2027,7 +2028,7 @@ static char *read_file(char *path, int *len)
 static int symbol_table_from_current_process(SymbolTable *st)
 {
     uint64_t base_addr = query_base_addr();
-    if (base_addr == -1)
+    if (base_addr == (uint64_t) -1)
         return -1;
     st->base_addr = base_addr;
 
@@ -2144,6 +2145,8 @@ static char*       crash_logger_signal_stack;
 
 static void crash_handler(int sig, siginfo_t *info, void *ucontext)
 {
+    (void) info;
+
     if (crash_logger_symbol_init) {
 
         // Buffer for evaluating format strings
@@ -2282,3 +2285,70 @@ static void crash_logger_free(void)
 }
 
 #endif
+////////////////////////////////////////////////////////////////
+// JSON
+////////////////////////////////////////////////////////////////
+
+#define MATCH_ARG_LIMIT 16
+
+int cweb_json_match_impl(CWEB_Request *req, char *pattern, CWEB_VArgs args)
+{
+    HTTP_String body = req->req->body;
+
+    JSON_Error error;
+    JSON_Arena arena = json_arena_init(
+        req->arena.ptr + req->arena.cur,
+        req->arena.len - req->arena.cur
+    );
+    JSON *json = json_decode(body.ptr, body.len, &arena, &error);
+    if (json == NULL) {
+//        printf("Parsing failed: %s\n", error.msg);
+        return 1;
+    }
+    req->arena.cur += arena.cur;
+
+    if (MATCH_ARG_LIMIT < args.len)
+        return -1;
+
+    JSON_MatchArg match_args[MATCH_ARG_LIMIT];
+    JSON_String   string_proxies[MATCH_ARG_LIMIT];
+
+    for (int i = 0; i < args.len; i++) {
+        CWEB_VArg arg = args.ptr[i];
+        switch (arg.type) {
+            case CWEB_VARG_TYPE_PB  : match_args[i] = json_match_arg_bool(arg.pb);  break;
+            case CWEB_VARG_TYPE_PLL : match_args[i] = json_match_arg_int((int64_t*) arg.pll); break;
+            case CWEB_VARG_TYPE_PD  : match_args[i] = json_match_arg_float(arg.pd); break;
+            case CWEB_VARG_TYPE_PSTR: match_args[i] = json_match_arg_string(&string_proxies[i]); break;
+            default: return -1;
+        }
+    }
+
+    int ret = json_match_impl(json, &error, pattern, (JSON_MatchArgs) { args.len, match_args });
+
+    if (ret == 0)
+        for (int i = 0; i < args.len; i++) {
+            CWEB_VArg arg = args.ptr[i];
+            if (arg.type == CWEB_VARG_TYPE_PSTR)
+                *arg.pstr = (CWEB_String) {
+                    string_proxies[i].ptr,
+                    string_proxies[i].len,
+                };
+        }
+
+    return ret;
+}
+
+CWEB_String cweb_json_escape(CWEB_Request *req, CWEB_String str)
+{
+    JSON_Arena arena = json_arena_init(
+        req->arena.ptr + req->arena.cur,
+        req->arena.len - req->arena.cur
+    );
+
+    JSON_String tmp = json_escape(&arena, (JSON_String) { str.ptr, str.len });
+
+    req->arena.cur += req->arena.cur;
+
+    return (CWEB_String) { tmp.ptr, tmp.len };
+}

@@ -1,0 +1,2 @@
+session expiration
+consider SameSite=Stricts

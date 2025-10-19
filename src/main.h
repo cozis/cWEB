@@ -314,13 +314,15 @@ typedef struct { void *handle; } CWEB_QueryResult;
 CWEB_QueryResult cweb_database_select_impl(CWEB *cweb, char *fmt, CWEB_VArgs args);
 
 // Helper
-#define cweb_database_select(cweb, fmt, ...) cweb_database_select_impl((cweb), (fmt), CWEB_VARGS(__VA_ARGS__))
+#define cweb_database_select(cweb, fmt, ...) \
+    cweb_database_select_impl((cweb), (fmt), CWEB_VARGS(__VA_ARGS__))
 
 // Returns the next row from the query result iterator.
 int cweb_next_query_row_impl(CWEB_QueryResult *res, CWEB_VArgs args);
 
 // Helper
-#define cweb_next_query_row(res, ...) cweb_next_query_row_impl((res), CWEB_VARGS(__VA_ARGS__))
+#define cweb_next_query_row(res, ...) \
+    cweb_next_query_row_impl((res), CWEB_VARGS(__VA_ARGS__))
 
 // Frees the result of a database query
 void cweb_free_query_result(CWEB_QueryResult *res);
@@ -330,3 +332,10 @@ int cweb_hash_password(CWEB_String pass, int cost, CWEB_PasswordHash *hash);
 
 // Checks whether the password matches the given hash
 int cweb_check_password(CWEB_String pass, CWEB_PasswordHash hash);
+
+int cweb_json_match_impl(CWEB_Request *req, char *pattern, CWEB_VArgs args);
+
+#define cweb_json_match(req, pattern, ...) \
+    cweb_json_match_impl((req), (pattern), CWEB_VARGS(__VA_ARGS__))
+
+CWEB_String cweb_json_escape(CWEB_Request *req, CWEB_String str);

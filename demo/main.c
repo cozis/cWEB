@@ -336,8 +336,15 @@ int main(void)
         return -1;
 
     {
+        int pid;
+#ifdef _WIN32
+        pid = GetCurrentProcessId();
+#else
+        pid = getpid();
+#endif
+
         char buf[128];
-        int len = snprintf(buf, sizeof(buf), "crash_%d.txt", getpid());
+        int len = snprintf(buf, sizeof(buf), "crash_%d.txt", pid);
         cweb_enable_crash_logger((CWEB_String) { buf, len });
     }
 
@@ -377,6 +384,26 @@ int main(void)
 
         CWEB_Request *req = cweb_wait(cweb);
         if (req == NULL) break;
+
+        if (cweb_match_endpoint(req, CWEB_STR("/json_demo"))) {
+
+            CWEB_String username;
+            CWEB_String password;
+            if (cweb_json_match(req, "{ 'username': ?, 'password': ? }", &username, &password)) {
+                cweb_respond_basic(req, 500, CWEB_STR("error"));
+                continue;
+            }
+
+            printf("username=[%.*s]\n", username.len, username.ptr);
+            printf("password=[%.*s]\n", password.len, password.ptr);
+
+            CWEB_String res = cweb_format(req,
+                "\\{\"message\": \"Your name is {}\"}",
+                cweb_json_escape(req, username)
+            );
+            cweb_respond_basic(req, 200, res);
+            continue;
+        }
 
         if (0) {}
         else if (cweb_match_endpoint(req, CWEB_STR("/api/login")))   endpoint_api_login(cweb, req);
